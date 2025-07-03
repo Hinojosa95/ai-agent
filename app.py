@@ -9,15 +9,20 @@ load_dotenv()
 app = Flask(__name__)
 client_data = {}
 
-@app.route("/voice", methods=['POST'])
+@app.route("/voice", methods=['POST', 'GET'])
 def voice():
-    from_number = request.form.get("From")
-    speech_result = request.form.get("SpeechResult", "").strip().lower()
+    from_number = request.values.get("From")
+    rep_name = request.args.get("rep", "there")
 
-    if from_number not in client_data:
-        client_data[from_number] = {
-            "messages": [{"role": "system", "content": "Eres un agente de seguros. Pregunta nombre, tipo de seguro que busca, y si está listo para cotizar. Transfiere si está interesado."}],
-        }
+    # Instrucción personalizada para cada lead
+    greeting = f"Hi {rep_name}, my name is Bryan, and I help truckers save up to 500 dollars a month on truck insurance, pick up a rental for 500 dollars a week, and secure them with high-paying loads. Do you have 2 minutes for a quick quote?"
+
+    # Iniciar conversación con ese script
+    client_data[from_number] = {
+        "messages": [{"role": "system", "content": f"You are a sales agent for truck insurance. Start the call by saying: '{greeting}'"}],
+    }
+
+
 
     if speech_result:
         client_data[from_number]["messages"].append({"role": "user", "content": speech_result})

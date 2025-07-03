@@ -1,0 +1,31 @@
+import pandas as pd
+from twilio.rest import Client
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+twilio_number = os.getenv("TWILIO_PHONE_NUMBER")
+ai_agent_url = "https://ai-agent-01hn.onrender.com/voice"  # Tu URL de Render
+
+client = Client(account_sid, auth_token)
+
+# Cargar leads
+df = pd.read_csv("nv_30days_070225.csv")
+
+# Iterar sobre los leads
+for index, row in df.iterrows():
+    rep = row["Company_Rep1"] if pd.notnull(row["Company_Rep1"]) else row.get("Company_Rep2", "there")
+    phone = row["Phone"]
+
+    print(f"Llamando a {rep} al número {phone}...")
+
+    call = client.calls.create(
+        to=phone,
+        from_=twilio_number,
+        url=f"{ai_agent_url}?rep={rep}"
+    )
+
+    print(f"Llamada iniciada. SID: {call.sid}")
