@@ -45,7 +45,6 @@ def voice():
         Termina diciendo: 'Gracias. Ahora te transfiero con uno de nuestros agentes.'
         """
 
-        # Detectar idioma
         lang = detect(speech_result) if speech_result else "en"
         voice = "Polly.Miguel" if lang.startswith("es") else "Polly.Joanna"
         greeting = greeting_es if lang.startswith("es") else greeting_en
@@ -56,13 +55,11 @@ def voice():
             "voice": voice
         }
 
-    reply = "Hi, thank you for calling. How can I help you today?"
     if speech_result:
         client_data[from_number]["messages"].append({"role": "user", "content": speech_result})
         reply = get_response(client_data[from_number]["messages"])
         client_data[from_number]["messages"].append({"role": "assistant", "content": reply})
 
-        # Guardar posibles respuestas
         if "vin" in speech_result.lower() or len(speech_result.strip()) == 17:
             client_data[from_number]["responses"]["VIN"] = speech_result
         elif any(word in speech_result.lower() for word in ["freightliner", "kenworth", "peterbilt", "mack", "volvo"]):
@@ -71,8 +68,9 @@ def voice():
             client_data[from_number]["responses"]["dob"] = speech_result
         elif len(speech_result) >= 6 and any(x in speech_result.lower() for x in ["licens", "número", "numero"]):
             client_data[from_number]["responses"]["license"] = speech_result
+    else:
+        reply = client_data[from_number]["messages"][0]["content"].split("Then ask")[0].strip()
 
-    # Verifica si se quiere transferir
     if any(word in speech_result.lower() for word in ["agent", "cotizar", "quote", "transfer", "speak", "hablar"]):
         responses = client_data[from_number].get("responses", {})
         vin = responses.get("VIN", "No proporcionado")
@@ -80,7 +78,6 @@ def voice():
         dob = responses.get("dob", "No proporcionado")
         license_num = responses.get("license", "No proporcionado")
 
-        # Enviar correo
         email_user = os.getenv("EMAIL_USER")
         email_password = os.getenv("EMAIL_PASSWORD")
         email_receiver = os.getenv("EMAIL_RECEIVER")
@@ -97,7 +94,6 @@ def voice():
 
 ¡Transferido automáticamente por el AI Agent!
 """
-
         msg = MIMEMultipart()
         msg['From'] = email_user
         msg['To'] = email_receiver
@@ -118,7 +114,6 @@ def voice():
         response.dial(os.getenv("FORWARD_NUMBER"))
         return str(response)
 
-    # Construir respuesta con voz natural
     response = VoiceResponse()
     gather = Gather(input="speech", action="/voice", method="POST", timeout=5)
     gather.say(reply, voice=client_data[from_number]["voice"])
@@ -128,3 +123,4 @@ def voice():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
+
