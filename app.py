@@ -1,12 +1,11 @@
-from flask import Flask, request, Response
+from flask import Flask, request
+from twilio.twiml.voice_response import VoiceResponse, Gather
 import os
 from dotenv import load_dotenv
-from chat_agent import get_response
 from langdetect import detect
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from twilio.twiml.voice_response import VoiceResponse, Gather
 
 load_dotenv()
 app = Flask(__name__)
@@ -15,84 +14,92 @@ client_data = {}
 @app.route("/voice", methods=['POST', 'GET'])
 def voice():
     from_number = request.values.get("From")
-    speech_result = request.values.get("SpeechResult", "")
+    speech_result = request.values.get("SpeechResult", "").strip()
     rep_name = request.args.get("rep", "there")
+
+    # Idiomas
+    greeting_en = f"""<speak><prosody rate="85%">Hi {rep_name}, my name is Bryan. I help truckers save up to $500 a month on insurance, rent trucks for $500 a week, and get high-paying loads. Do you have 2 minutes for a quick quote?</prosody></speak>"""
+    greeting_es = f"""<speak><prosody rate="85%">Hola {rep_name}, mi nombre es Bryan. Ayudo a los camioneros a ahorrar hasta 500 dólares al mes en seguros, rentar camiones por 500 a la semana y conseguir cargas bien pagadas. ¿Tienes 2 minutos para una cotización rápida?</prosody></speak>"""
+
+    questions_en = [
+        "What is the VIN number of your truck?",
+        "What is the make, model, and type of your truck?",
+        "What is your date of birth?",
+        "What is your driver's license number?"
+    ]
+
+    questions_es = [
+        "¿Cuál es el número de serie VIN de tu camión?",
+        "¿Qué marca, modelo y tipo es tu camión?",
+        "¿Cuál es tu fecha de nacimiento?",
+        "¿Cuál es tu número de licencia?"
+    ]
 
     if from_number not in client_data:
         lang = detect(speech_result) if speech_result else "en"
-        voice = "Polly.Miguel" if lang.startswith("es") else "Polly.Joanna"
-        greeting = f"""Hola {rep_name}, soy Bryan. Ayudo a los camioneros a ahorrar hasta $500 al mes en seguros, rentar un camión por $500 a la semana y conseguir cargas bien pagadas. ¿Tienes 2 minutos para una cotización rápida?""" if lang.startswith("es") else f"""Hi {rep_name}, this is Bryan. I help truckers save up to $500/month on insurance, get rentals for $500/week, and secure high-paying loads. Do you have 2 minutes for a quick quote?"""
+        is_spanish = lang.startswith("es")
 
         client_data[from_number] = {
-            "messages": [{"role": "system", "content": greeting}],
+            "step": 0,
             "responses": {},
-            "voice": voice
+            "lang": "es" if is_spanish else "en",
+            "voice": "Polly.Miguel" if is_spanish else "Polly.Joanna"
         }
 
+        # Greeting inicial
         response = VoiceResponse()
-        gather = Gather(input="speech", action="/voice", method="POST", timeout=3)
-        gather.say(greeting, voice=voice)
+        gather = Gather(input="speech", action="/voice", method="POST", timeout=5)
+        greet_text = greeting_es if is_spanish else greeting_en
+        gather.say(greet_text, voice=client_data[from_number]["voice"], language="es-MX" if is_spanish else "en-US")
         response.append(gather)
         return str(response)
 
+    # Guardar respuesta anterior si existía
+    step = client_data[from_number]["step"]
     if speech_result:
-        client_data[from_number]["messages"].append({"role": "user", "content": speech_result})
-        reply = get_response(client_data[from_number]["messages"])
-        client_data[from_number]["messages"].append({"role": "assistant", "content": reply})
-
-        # Detectar información
-        if "vin" in speech_result.lower() or len(speech_result.strip()) == 17:
-            client_data[from_number]["responses"]["VIN"] = speech_result
-        elif any(word in speech_result.lower() for word in ["freightliner", "kenworth", "peterbilt", "mack", "volvo"]):
-            client_data[from_number]["responses"]["truck_info"] = speech_result
-        elif any(char.isdigit() for char in speech_result) and "/" in speech_result:
+        if step == 0:
+            client_data[from_number]["responses"]["vin"] = speech_result
+        elif step == 1:
+            client_data[from_number]["responses"]["truck"] = speech_result
+        elif step == 2:
             client_data[from_number]["responses"]["dob"] = speech_result
-        elif len(speech_result) >= 6 and any(x in speech_result.lower() for x in ["licens", "número", "numero"]):
+        elif step == 3:
             client_data[from_number]["responses"]["license"] = speech_result
 
-        # Transferencia
-        if any(word in speech_result.lower() for word in ["agent", "cotizar", "quote", "transfer", "speak", "hablar"]):
-            send_email_with_info(from_number)
-            response = VoiceResponse()
-            response.say("Gracias. Transfiriendo la llamada.", voice=client_data[from_number]["voice"])
-            response.dial(os.getenv("FORWARD_NUMBER"))
-            return str(response)
+    # Avanzar al siguiente paso
+    client_data[from_number]["step"] += 1
+    step = client_data[from_number]["step"]
+    lang = client_data[from_number]["lang"]
+    voice = client_data[from_number]["voice"]
 
-        # Respuesta regular
+    if step < 4:
+        question = questions_es[step] if lang == "es" else questions_en[step]
         response = VoiceResponse()
-        gather = Gather(input="speech", action="/voice", method="POST", timeout=3)
-        gather.say(reply, voice=client_data[from_number]["voice"])
+        gather = Gather(input="speech", action="/voice", method="POST", timeout=5)
+        gather.say(question, voice=voice, language="es-MX" if lang == "es" else "en-US")
         response.append(gather)
         return str(response)
 
-    # Si no hay respuesta
-    response = VoiceResponse()
-    response.say("¿Hola? ¿Sigues ahí?", voice=client_data[from_number]["voice"])
-    return str(response)
-
-def send_email_with_info(phone):
-    data = client_data.get(phone, {})
-    info = data.get("responses", {})
-    vin = info.get("VIN", "No proporcionado")
-    truck = info.get("truck_info", "No proporcionado")
-    dob = info.get("dob", "No proporcionado")
-    license_num = info.get("license", "No proporcionado")
-
+    # Transferencia
+    data = client_data[from_number]["responses"]
     email_user = os.getenv("EMAIL_USER")
     email_password = os.getenv("EMAIL_PASSWORD")
     email_receiver = os.getenv("EMAIL_RECEIVER")
 
+    body = f"""
+📞 Información del lead:
+
+📱 Número: {from_number}
+🆔 VIN: {data.get('vin', 'No proporcionado')}
+🚚 Truck: {data.get('truck', 'No proporcionado')}
+🎂 Fecha de nacimiento: {data.get('dob', 'No proporcionado')}
+🪪 Licencia: {data.get('license', 'No proporcionado')}
+"""
+
     msg = MIMEMultipart()
     msg['From'] = email_user
     msg['To'] = email_receiver
-    msg['Subject'] = "📞 Lead transferido a agente"
-    body = f"""
-📱 Teléfono: {phone}
-🆔 VIN: {vin}
-🚛 Camión: {truck}
-🎂 Nacimiento: {dob}
-🪪 Licencia: {license_num}
-"""
+    msg['Subject'] = "🔁 Lead transferido a agente"
     msg.attach(MIMEText(body, 'plain'))
 
     try:
@@ -102,7 +109,13 @@ def send_email_with_info(phone):
         server.send_message(msg)
         server.quit()
     except Exception as e:
-        print("❌ Error enviando correo:", e)
+        print("❌ Error al enviar correo:", e)
+
+    # Transferencia
+    response = VoiceResponse()
+    response.say("Thank you. Transferring you now.", voice=voice)
+    response.dial(os.getenv("FORWARD_NUMBER"))
+    return str(response)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
