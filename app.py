@@ -1,23 +1,30 @@
+# app.py
 from flask import Flask, request, send_from_directory
-from twilio.twiml.voice_response import VoiceResponse, Play, Gather
-import os
+from twilio.twiml.voice_response import VoiceResponse, Gather, Dial
 from dotenv import load_dotenv
-from langdetect import detect
+import os
 import requests
+from langdetect import detect
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
 app = Flask(__name__, static_url_path='/static')
-client_data = {}
 
+# Configuración global
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-VOICE_ID = "yUjL5K6CCuYZWlyF0yYI"  # Tu voz clonada en ElevenLabs
+VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
+FORWARD_NUMBER = os.getenv("FORWARD_NUMBER")
 
-# Función para generar audio personalizado y evitar duplicados
-def generar_audio_elevenlabs(texto, filename):
-    audio_path = f"./static/{filename}"
-    if os.path.exists(audio_path):
-        return f"{request.url_root}static/{filename}"
+# Estado de la llamada por número
+call_state = {}
 
+# Función para generar audio
+def generar_audio(texto, filename):
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
@@ -26,72 +33,95 @@ def generar_audio_elevenlabs(texto, filename):
     payload = {
         "text": texto,
         "model_id": "eleven_monolingual_v1",
-        "voice_settings": {
-            "stability": 0.4,
-            "similarity_boost": 0.85
-        }
+        "voice_settings": {"stability": 0.4, "similarity_boost": 0.85}
     }
     response = requests.post(url, json=payload, headers=headers)
     if response.status_code == 200:
-        with open(audio_path, "wb") as f:
+        path = f"./static/{filename}"
+        with open(path, "wb") as f:
             f.write(response.content)
         return f"{request.url_root}static/{filename}"
     else:
-        print("❌ Error generando audio:", response.text)
+        print("Error generando audio:", response.text)
         return None
 
-@app.route("/voice", methods=['POST', 'GET'])
+# Función para enviar correo
+
+def enviar_correo(datos):
+    msg = MIMEMultipart()
+    msg['From'] = EMAIL_USER
+    msg['To'] = EMAIL_RECEIVER
+    msg['Subject'] = "📞 Lead listo para cotización - AI Agent"
+
+    body = "".join([f"{k}: {v}\n" for k, v in datos.items()])
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_USER, EMAIL_RECEIVER, msg.as_string())
+        server.quit()
+        print("✅ Correo enviado")
+    except Exception as e:
+        print("❌ Error enviando correo:", e)
+
+@app.route("/voice", methods=['POST'])
 def voice():
     from_number = request.values.get("From")
-    speech_result = request.values.get("SpeechResult", "")
-    rep_name = request.args.get("rep", "there")
+    speech = request.values.get("SpeechResult", "")
 
-    if from_number not in client_data:
-        lang = detect(speech_result) if speech_result else "en"
+    if from_number not in call_state:
+        lang = detect(speech) if speech else "en"
+        saludo = ("Hola, soy Bryan..." if lang == "es" else "Hi, this is Bryan...")
+        call_state[from_number] = {"step": 1, "lang": lang, "data": {}, "last": saludo}
 
-        greeting_en = f"""Hi {rep_name}, this is Bryan. I help truckers save up to $500 per month per truck on insurance,
-get dispatching at just 4%, earn $3,000–$4,000 a week,
-access gas cards with $2,500 credit,
-and get help financing your down payment.
-
-Do you have 2 minutes for a quick quote?"""
-
-        greeting_es = f"""Hola {rep_name}, soy Bryan. Ayudo a camioneros a ahorrar hasta $500 al mes por camión en seguros,
-a obtener despacho por solo 4%, ganar de $3,000 a $4,000 por semana,
-acceso a tarjetas de gasolina con $2,500 de crédito,
-y ayuda para el enganche de un camión nuevo.
-
-¿Tienes 2 minutos para una cotización rápida?"""
-
-        greeting = greeting_es if lang.startswith("es") else greeting_en
-        client_data[from_number] = {
-            "greeting": greeting,
-            "lang": lang
-        }
-
-        # Generar audio solo una vez por número
-        audio_filename = f"{from_number.strip('+')}.mp3"
-        audio_url = generar_audio_elevenlabs(greeting, audio_filename)
-
-        response = VoiceResponse()
-        if audio_url:
-            response.play(audio_url)
-            return str(response)  # ✅ Detener aquí para que escuche el saludo completo
-        else:
-            response.say("Sorry, I couldn't generate audio.", voice="Polly.Matthew")
-            return str(response)
-
-    # Segunda vuelta: procesar respuesta
+    state = call_state[from_number]
+    step = state["step"]
+    lang = state["lang"]
     response = VoiceResponse()
-    gather = Gather(input="speech", action="/voice", method="POST", timeout=5)
-    gather.say("Please tell me the make and model of your truck.", voice="Polly.Matthew")
-    response.append(gather)
+
+    # Guardamos la respuesta previa
+    if speech:
+        preguntas = ["Truck Info", "VIN", "Date of Birth", "License"]
+        if 2 <= step <= 5:
+            state["data"][preguntas[step - 2]] = speech
+
+    state["step"] += 1
+    next_step = state["step"]
+
+    if next_step == 2:
+        prompt = "What is the year, make, and model of your truck?"
+    elif next_step == 3:
+        prompt = "Please tell me the VIN number."
+    elif next_step == 4:
+        prompt = "What is your date of birth?"
+    elif next_step == 5:
+        prompt = "What is your driver license number?"
+    elif next_step == 6:
+        # Terminamos, enviamos correo y transferimos
+        enviar_correo(state["data"])
+        response.say("Thank you. Connecting you now to a live agent.", voice="Polly.Matthew")
+        response.dial(FORWARD_NUMBER)
+        call_state.pop(from_number, None)
+        return str(response)
+    else:
+        prompt = state["last"]
+
+    audio_url = generar_audio(prompt, f"{from_number}_{next_step}.mp3")
+    if audio_url:
+        gather = Gather(input="speech", timeout=6, action="/voice")
+        gather.play(audio_url)
+        response.append(gather)
+    else:
+        response.say("Sorry, could not generate the prompt.", voice="Polly.Matthew")
+
+    state["last"] = prompt
     return str(response)
 
 @app.route('/static/<path:filename>')
 def static_files(filename):
     return send_from_directory('static', filename)
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+if __name__ == '__main__':
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
