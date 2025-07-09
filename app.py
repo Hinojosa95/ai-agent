@@ -1,5 +1,5 @@
 from flask import Flask, request, send_from_directory
-from twilio.twiml.voice_response import VoiceResponse, Gather, Play
+from twilio.twiml.voice_response import VoiceResponse, Play, Gather
 import os
 from dotenv import load_dotenv
 from langdetect import detect
@@ -10,9 +10,14 @@ app = Flask(__name__, static_url_path='/static')
 client_data = {}
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-VOICE_ID = "yUjL5K6CCuYZWlyF0yYI"  # Voz clonada
+VOICE_ID = "yUjL5K6CCuYZWlyF0yYI"  # Tu voz clonada en ElevenLabs
 
+# Función para generar audio personalizado y evitar duplicados
 def generar_audio_elevenlabs(texto, filename):
+    audio_path = f"./static/{filename}"
+    if os.path.exists(audio_path):
+        return f"{request.url_root}static/{filename}"
+
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
@@ -28,23 +33,22 @@ def generar_audio_elevenlabs(texto, filename):
     }
     response = requests.post(url, json=payload, headers=headers)
     if response.status_code == 200:
-        filepath = f"./static/{filename}"
-        with open(filepath, "wb") as f:
+        with open(audio_path, "wb") as f:
             f.write(response.content)
         return f"{request.url_root}static/{filename}"
     else:
         print("❌ Error generando audio:", response.text)
         return None
 
-@app.route("/voice", methods=["POST", "GET"])
+@app.route("/voice", methods=['POST', 'GET'])
 def voice():
     from_number = request.values.get("From")
     speech_result = request.values.get("SpeechResult", "")
     rep_name = request.args.get("rep", "there")
 
-    # Crear perfil si no existe
     if from_number not in client_data:
         lang = detect(speech_result) if speech_result else "en"
+
         greeting_en = f"""Hi {rep_name}, this is Bryan. I help truckers save up to $500 per month per truck on insurance,
 get dispatching at just 4%, earn $3,000–$4,000 a week,
 access gas cards with $2,500 credit,
@@ -60,42 +64,28 @@ y ayuda para el enganche de un camión nuevo.
 ¿Tienes 2 minutos para una cotización rápida?"""
 
         greeting = greeting_es if lang.startswith("es") else greeting_en
-        filename = f"{from_number}.mp3"
-        audio_url = generar_audio_elevenlabs(greeting, filename)
-
         client_data[from_number] = {
-            "lang": lang,
-            "step": 1,
-            "audio_url": audio_url
+            "greeting": greeting,
+            "lang": lang
         }
 
-    response = VoiceResponse()
+        # Generar audio solo una vez por número
+        audio_filename = f"{from_number.strip('+')}.mp3"
+        audio_url = generar_audio_elevenlabs(greeting, audio_filename)
 
-    # Reproducir saludo si es la primera interacción
-    if client_data[from_number]["step"] == 1:
-        if client_data[from_number]["audio_url"]:
-            response.play(client_data[from_number]["audio_url"])
+        response = VoiceResponse()
+        if audio_url:
+            response.play(audio_url)
+            return str(response)  # ✅ Detener aquí para que escuche el saludo completo
         else:
             response.say("Sorry, I couldn't generate audio.", voice="Polly.Matthew")
+            return str(response)
 
-    # Definir siguiente pregunta
-    step = client_data[from_number]["step"]
-    preguntas = {
-        2: "Please tell me the year, make and model of your truck.",
-        3: "Can you tell me the VIN number?",
-        4: "What is your date of birth?",
-        5: "Finally, your driver's license number please.",
-        6: "Thanks. Give me a second to transfer you to an agent."
-    }
-    pregunta = preguntas.get(step, "Thanks. One moment please.")
-
+    # Segunda vuelta: procesar respuesta
+    response = VoiceResponse()
     gather = Gather(input="speech", action="/voice", method="POST", timeout=5)
-    gather.say(pregunta, voice="Polly.Matthew")
+    gather.say("Please tell me the make and model of your truck.", voice="Polly.Matthew")
     response.append(gather)
-
-    # Avanzar paso
-    client_data[from_number]["step"] += 1
-
     return str(response)
 
 @app.route('/static/<path:filename>')

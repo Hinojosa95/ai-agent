@@ -3,3 +3,4 @@ twilio
 openai
 python-dotenv
 langdetect
+requests
