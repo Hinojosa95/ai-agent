@@ -72,10 +72,38 @@ def voice():
 
     data = client_data.setdefault(from_number, {
         "lang": "es" if detect(speech_result or "hola") == "es" else "en",
-        "step": 0,
+        "step": -1,
         "responses": {}
     })
 
+    response = VoiceResponse()
+
+    # --- Mensaje de bienvenida ---
+    if data['step'] == -1:
+        saludo_en = f"""Hi {rep_name}, this is Bryan. I'm calling because I help truckers save up to $500 per month per truck on insurance,
+get dispatching at just 4%, earn from $3,000 to $4,000 a week,
+access gas cards with $2,500 credit, and get help financing your down payment.
+Do you have two minutes for a quick quote?"""
+
+        saludo_es = f"""Hola {rep_name}, soy Bryan. Ayudo a camioneros a ahorrar hasta $500 al mes por camión en seguros,
+a obtener despacho por solo 4%, ganar de $3,000 a $4,000 por semana,
+acceso a tarjetas de gasolina con $2,500 de crédito,
+y ayuda para el enganche de un camión nuevo.
+¿Tienes 2 minutos para una cotización rápida?"""
+
+        saludo = saludo_es if data['lang'] == 'es' else saludo_en
+        audio_url = generar_audio_elevenlabs(saludo, "intro.mp3")
+
+        if audio_url:
+            response.play(audio_url)
+        else:
+            response.say(saludo, voice="Polly.Matthew")
+
+        # Después del saludo, avanzamos al paso 0
+        data['step'] = 0
+        return str(response)
+
+    # --- Flujo de preguntas ---
     pasos = [
         ("truck", "What year, make and model is your truck?" if data['lang'] == 'en' else "¿Cuál es el año, marca y modelo de tu camión?"),
         ("vin", "Can you provide the VIN number?" if data['lang'] == 'en' else "¿Cuál es el número VIN del camión?"),
@@ -86,8 +114,6 @@ def voice():
     if speech_result and data['step'] > 0:
         key, _ = pasos[data['step'] - 1]
         data['responses'][key] = speech_result
-
-    response = VoiceResponse()
 
     if data['step'] < len(pasos):
         key, pregunta = pasos[data['step']]
