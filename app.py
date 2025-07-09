@@ -1,17 +1,26 @@
 from flask import Flask, request, send_from_directory
-from twilio.twiml.voice_response import VoiceResponse, Gather
+from twilio.twiml.voice_response import VoiceResponse, Gather, Dial
 import os
 from dotenv import load_dotenv
 from langdetect import detect
 import requests
+import smtplib
+from email.message import EmailMessage
+import json
 
 load_dotenv()
 app = Flask(__name__, static_url_path='/static')
 client_data = {}
 
+# --- Config ---
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
+FORWARD_NUMBER = os.getenv("FORWARD_NUMBER")
 
+# --- Helper: Generate Audio with ElevenLabs ---
 def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
@@ -28,67 +37,77 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     }
     response = requests.post(url, json=payload, headers=headers)
     if response.status_code == 200:
-        with open(f"./static/{filename}", "wb") as f:
+        path = f"./static/{filename}"
+        with open(path, "wb") as f:
             f.write(response.content)
         return f"{request.url_root}static/{filename}"
     else:
         print("❌ Error generando audio:", response.text)
         return None
 
-@app.route("/voice", methods=['POST', 'GET'])
+# --- Helper: Enviar correo ---
+def enviar_correo(datos):
+    msg = EmailMessage()
+    msg['Subject'] = f"Nuevo lead: {datos.get('name', 'Sin nombre')}"
+    msg['From'] = EMAIL_USER
+    msg['To'] = EMAIL_RECEIVER
+
+    cuerpo = "".join([f"{k}: {v}\n" for k, v in datos.items()])
+    msg.set_content(f"Se ha recolectado la siguiente información:\n\n{cuerpo}")
+
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(EMAIL_USER, EMAIL_PASSWORD)
+            smtp.send_message(msg)
+            print("✅ Correo enviado correctamente")
+    except Exception as e:
+        print("❌ Error al enviar el correo:", e)
+
+# --- Ruta Principal ---
+@app.route("/voice", methods=['POST'])
 def voice():
     from_number = request.values.get("From")
-    speech_result = request.values.get("SpeechResult", "")
+    speech_result = request.values.get("SpeechResult", "").strip()
     rep_name = request.args.get("rep", "there")
 
-    if from_number not in client_data:
-        lang = detect(speech_result) if speech_result else "en"
+    data = client_data.setdefault(from_number, {
+        "lang": "es" if detect(speech_result or "hola") == "es" else "en",
+        "step": 0,
+        "responses": {}
+    })
 
-        greeting_en = f"""Hi {rep_name}, this is Bryan. I'm calling because I help truckers save up to $500 per month per truck on insurance,
-get dispatching at just 4%, earn from $3,000 to $4,000 a week. 
-Do you have two minutes for a quick quote? It's a non-obligation quote, sir.
+    pasos = [
+        ("truck", "What year, make and model is your truck?" if data['lang'] == 'en' else "¿Cuál es el año, marca y modelo de tu camión?"),
+        ("vin", "Can you provide the VIN number?" if data['lang'] == 'en' else "¿Cuál es el número VIN del camión?"),
+        ("dob", "What is your date of birth?" if data['lang'] == 'en' else "¿Cuál es tu fecha de nacimiento?"),
+        ("license", "And your driver’s license number?" if data['lang'] == 'en' else "¿Cuál es tu número de licencia de conducir?")
+    ]
 
-I have your DOT number. Could you confirm the year, make, and model of your truck?
-
-Also, I’ll need your VIN number, what you're hauling, how far you run (your radius), 
-your date of birth, and your driver’s license number. That way I can give you an accurate quote.
-
-At the end, I’ll bring a licensed agent on the line to go over the numbers.
-Let's get started, what’s the make and model of your truck?"""
-
-        greeting_es = f"""Hola {rep_name}, soy Bryan. Ayudo a camioneros a ahorrar hasta $500 al mes por camión en seguros,
-a obtener despacho por solo 4%, ganar de $3,000 a $4,000 por semana,
-acceso a tarjetas de gasolina con $2,500 de crédito,
-y ayuda para el enganche de un camión nuevo.
-
-¿Tienes 2 minutos para una cotización rápida?
-Empecemos: ¿Cuál es la marca y modelo de tu camión?"""
-
-        greeting = greeting_es if lang.startswith("es") else greeting_en
-        client_data[from_number] = {
-            "greeting": greeting,
-            "lang": lang,
-            "attempts": 1
-        }
+    if speech_result and data['step'] > 0:
+        key, _ = pasos[data['step'] - 1]
+        data['responses'][key] = speech_result
 
     response = VoiceResponse()
-    audio_url = generar_audio_elevenlabs(client_data[from_number]["greeting"])
-    
-    if audio_url:
-        response.play(audio_url)
-    else:
-        response.say("Sorry, I couldn't generate audio.", voice="Polly.Matthew")
 
-    # RECOGER RESPUESTA DEL CLIENTE
-    gather = Gather(input="speech", action="/voice", method="POST", timeout=5)
-    gather.say("Please tell me the make and model of your truck.", voice="Polly.Matthew")
-    response.append(gather)
+    if data['step'] < len(pasos):
+        key, pregunta = pasos[data['step']]
+        audio_url = generar_audio_elevenlabs(pregunta, f"step_{key}.mp3")
+        if audio_url:
+            response.play(audio_url)
+        else:
+            response.say(pregunta, voice="Polly.Matthew")
 
-    # SI NO HAY RESPUESTA, REINTENTAR UNA VEZ
-    if client_data[from_number]["attempts"] < 2:
-        client_data[from_number]["attempts"] += 1
+        gather = Gather(input="speech", action="/voice", method="POST", timeout=6)
+        gather.say(pregunta, voice="Polly.Matthew")
+        response.append(gather)
+        data['step'] += 1
+
     else:
-        response.say("Sorry, I couldn't hear you. We'll try again later.", voice="Polly.Matthew")
+        response.say("Thank you. Connecting you with a licensed agent now...", voice="Polly.Matthew")
+        enviar_correo(data['responses'])
+        dial = Dial(caller_id=request.values.get("To"))
+        dial.number(FORWARD_NUMBER)
+        response.append(dial)
 
     return str(response)
 
