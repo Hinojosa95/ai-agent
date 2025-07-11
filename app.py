@@ -6,12 +6,15 @@ import requests
 import smtplib
 from email.message import EmailMessage
 import openai
+import json
 
+# --- Cargar variables de entorno ---
 load_dotenv()
+
 app = Flask(__name__, static_url_path='/static')
 client_data = {}
 
-# --- Config ---
+# --- Configuración de variables ---
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 EMAIL_USER = os.getenv("EMAIL_USER")
@@ -21,7 +24,7 @@ FORWARD_NUMBER = os.getenv("FORWARD_NUMBER")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_API_KEY
 
-# --- Helper: Generate Audio with ElevenLabs ---
+# --- Generar audio ElevenLabs ---
 def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
@@ -30,7 +33,7 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     }
     payload = {
         "text": texto,
-        "model_id": "eleven_monolingual_v1",  # asegúrate de que sea tu modelo
+        "model_id": "eleven_monolingual_v1",
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.85
@@ -47,12 +50,10 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
             base_url = "http://localhost:5000/"
         return f"{base_url}static/{filename}"
     else:
-        print("❌ Error generando audio:")
-        print("Status Code:", response.status_code)
-        print("Respuesta:", response.text)
+        print("❌ Error generando audio:", response.status_code, response.text)
         return None
 
-# --- Helper: Enviar correo ---
+# --- Enviar correo ---
 def enviar_correo(datos):
     msg = EmailMessage()
     msg['Subject'] = f"Nuevo lead: {datos.get('name', 'Sin nombre')}"
@@ -70,27 +71,12 @@ def enviar_correo(datos):
     except Exception as e:
         print("❌ Error al enviar el correo:", e)
 
-# --- Helper: GPT respuesta ---
-def obtener_respuesta_gpt(prompt):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Eres un agente de seguros amable y profesional que hace preguntas para cotizar un seguro de camión."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print("❌ Error GPT:", e)
-        return "Lo siento, hubo un error."
-
-# --- Ruta Principal ---
+# --- Ruta de llamada principal ---
 @app.route("/voice", methods=['POST'])
 def voice():
     from_number = request.values.get("From")
     speech_result = request.values.get("SpeechResult", "").strip()
-    rep_name = request.args.get("rep", "there")
+    rep_name = request.args.get("rep", "Bryan")
 
     data = client_data.setdefault(from_number, {
         "step": 0,
@@ -104,56 +90,65 @@ def voice():
         "What is your date of birth?",
         "What is your driver’s license number?"
     ]
-
     keys = ["truck", "vin", "dob", "license"]
-
-    if data['step'] > 0 and speech_result:
-        clave = keys[data['step'] - 1]
-        data['responses'][clave] = speech_result
-
     response = VoiceResponse()
 
-    if data['step'] == 0:
-        saludo = obtener_respuesta_gpt(f"Saluda como Bryan y explica brevemente que necesitas información para cotizar el seguro del camión del cliente. Dilo en inglés.")
+    # Guardar respuesta anterior
+    if data["step"] > 0 and speech_result:
+        key = keys[data["step"] - 1]
+        data["responses"][key] = speech_result
+
+    # Paso 0 - Saludo
+    if data["step"] == 0:
+        saludo = (
+            f"Hi {rep_name}, this is Bryan. I help truckers save up to $500 per month per truck on insurance, "
+            f"get dispatching at just 4%, earn $3,000 to $4,000 a week, access gas cards with $2,500 credit, "
+            f"and get help financing your down payment. Do you have 2 minutes for a quick quote?"
+        )
         audio_url = generar_audio_elevenlabs(saludo, "saludo.mp3")
         if audio_url:
             response.play(audio_url)
         else:
             response.say(saludo)
 
-    elif data['step'] < len(preguntas):
-        pregunta = preguntas[data['step']]
+    # Paso 1-N - Preguntas
+    elif data["step"] < len(preguntas):
+        pregunta = preguntas[data["step"]]
         audio_url = generar_audio_elevenlabs(pregunta, f"step{data['step']}.mp3")
         if audio_url:
             response.play(audio_url)
         else:
             response.say(pregunta)
 
+    # Paso final - resumen, correo y transferencia
     else:
-        resumen = "Here is the client's information: " + json.dumps(data['responses'])
-        despedida = obtener_respuesta_gpt(f"Gracias por la información. Ahora te transferiré con un agente humano. Este es el resumen: {resumen}. Despídete brevemente y amablemente.")
+        enviar_correo(data["responses"])
+        despedida = "Thanks for the information. I’ll now transfer you to a live agent."
         audio_url = generar_audio_elevenlabs(despedida, "despedida.mp3")
         if audio_url:
             response.play(audio_url)
         else:
             response.say(despedida)
 
-        enviar_correo(data['responses'])
         dial = Dial(caller_id=request.values.get("To"))
         dial.number(FORWARD_NUMBER)
         response.append(dial)
+        return str(response)
 
+    # Recolección de respuesta
     gather = Gather(input="speech", action="/voice", method="POST", timeout=6)
     gather.say("Please say your answer after the beep.", voice="Polly.Matthew")
     response.append(gather)
 
-    data['step'] += 1
+    data["step"] += 1
     return str(response)
 
+# --- Servir archivos estáticos ---
 @app.route('/static/<path:filename>')
 def static_files(filename):
     return send_from_directory('static', filename)
 
+# --- Ejecutar App ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
