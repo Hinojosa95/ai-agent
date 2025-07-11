@@ -7,11 +7,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-TWILIO_SID = os.getenv("TWILIO_SID")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_NUMBER = os.getenv("TWILIO_NUMBER")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_NUMBER")
 
-client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 csv_file = "nv_30days_070225.csv"
 max_calls_per_day = 700
