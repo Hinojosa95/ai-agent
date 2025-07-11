@@ -72,8 +72,11 @@ def enviar_correo(datos):
         print("❌ Error al enviar el correo:", e)
 
 # --- Ruta de llamada principal ---
-@app.route("/voice", methods=['POST'])
+@app.route("/voice", methods=['GET', 'POST'])
 def voice():
+    if request.method == "GET":
+        return "👋 Hello! This endpoint is for Twilio POST requests only."
+
     from_number = request.values.get("From")
     speech_result = request.values.get("SpeechResult", "").strip()
     rep_name = request.args.get("rep", "Bryan")
