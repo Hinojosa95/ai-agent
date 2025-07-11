@@ -38,7 +38,7 @@ with open("mensaje_inicial.txt", "w") as f:
 # Hacer la llamada
 call = client.calls.create(
     twiml=f'<Response><Redirect method="POST">https://ai-agent-01hn.onrender.com/voice?rep={name}</Redirect></Response>',
-    to=lead["Phone Number"],
+    to=lead["Phone""],
     from_=twilio_number
 )
 
