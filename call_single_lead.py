@@ -1,37 +1,46 @@
-# call_single_lead.py
-
-import os
+import csv
 from twilio.rest import Client
+from twilio.twiml.voice_response import VoiceResponse
+import os
 from dotenv import load_dotenv
+import requests
+import time
 
-# Cargar las variables de entorno
 load_dotenv()
 
-# --- Configuración desde .env ---
+# Configuración
 account_sid = os.getenv("TWILIO_ACCOUNT_SID")
 auth_token = os.getenv("TWILIO_AUTH_TOKEN")
 twilio_number = os.getenv("TWILIO_PHONE_NUMBER")
+FORWARD_NUMBER = os.getenv("FORWARD_NUMBER")
 
-# --- URL del agente AI ---
-# Puedes personalizar el nombre del representante y agregar un parámetro de origen para pruebas
-ai_agent_url = "https://ai-agent-01hn.onrender.com/voice?rep=Bryan&source=prueba"
-
-# --- Número al que deseas llamar ---
-target_number = "+12816195256"  # Cámbialo si quieres probar con otro número verificado
-
-# --- Inicializar el cliente de Twilio ---
 client = Client(account_sid, auth_token)
 
-# --- Hacer la llamada ---
-print(f"📞 Iniciando llamada a {target_number} desde {twilio_number}...")
+# Cargar el lead
+with open('nv_30days_070225.csv', newline='') as f:
+    reader = csv.DictReader(f)
+    lead = next(reader)
 
-try:
-    call = client.calls.create(
-        to=target_number,
-        from_=twilio_number,
-        url=ai_agent_url
-    )
-    print(f"✅ Llamada iniciada correctamente. SID: {call.sid}")
-except Exception as e:
-    print("❌ Error al intentar iniciar la llamada:")
-    print(e)
+# Obtener nombre del cliente
+name = lead.get("Company_Rep1") or lead.get("Company_Rep2") or "there"
+
+# Texto del mensaje inicial
+initial_script = (
+    f"Hi {name}, this is Bryan. I help truckers save up to $500 per month per truck on insurance, "
+    "get dispatching at just 4%, earn $3,000 to $4,000 a week, access gas cards with $2,500 credit, "
+    "and get help financing your down payment. Do you have 2 minutes for a quick quote?"
+)
+
+# Guardar texto para usar desde la app
+with open("mensaje_inicial.txt", "w") as f:
+    f.write(initial_script)
+
+# Hacer la llamada
+call = client.calls.create(
+    twiml=f'<Response><Redirect method="POST">https://ai-agent-01hn.onrender.com/voice?rep={name}</Redirect></Response>',
+    to=lead["Phone Number"],
+    from_=twilio_number
+)
+
+print(f"📞 Llamando a {name} al número {lead['Phone Number']}...")
+print("SID de llamada:", call.sid)
