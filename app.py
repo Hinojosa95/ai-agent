@@ -30,7 +30,7 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     }
     payload = {
         "text": texto,
-        "model_id": "eleven_monolingual_v1",
+        "model_id": "eleven_monolingual_v1",  # asegúrate de que sea tu modelo
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.85
@@ -47,7 +47,9 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
             base_url = "http://localhost:5000/"
         return f"{base_url}static/{filename}"
     else:
-        print("❌ Error generando audio:", response.text)
+        print("❌ Error generando audio:")
+        print("Status Code:", response.status_code)
+        print("Respuesta:", response.text)
         return None
 
 # --- Helper: Enviar correo ---
