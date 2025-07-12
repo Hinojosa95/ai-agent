@@ -47,7 +47,7 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
         with open(path, "wb") as f:
             f.write(response.content)
             print("✅ Audio guardado en:", os.path.abspath(path))
-            
+
         try:
             base_url = request.url_root
         except RuntimeError:
@@ -95,14 +95,14 @@ def voice():
         "What is your driver’s license number?"
     ]
     keys = ["truck", "vin", "dob", "license"]
-    
+
     response = VoiceResponse()
 
     # Guardar respuesta anterior solo si hay texto
     if data["step"] > 0 and speech_result:
         key = keys[data["step"] - 1]
         data["responses"][key] = speech_result
-        data["step"] += 1  # avanzar solo cuando sí hubo respuesta
+        data["step"] += 1  # avanzar solo si hubo respuesta
 
     # Paso 0 - saludo inicial
     if data["step"] == 0:
@@ -118,6 +118,8 @@ def voice():
         else:
             print("❌ No se generó el audio")
             response.say(saludo)
+
+        return str(response)  # salir antes de agregar gather
 
     # Paso 1 a N - preguntas
     elif data["step"] < len(preguntas):
@@ -144,15 +146,11 @@ def voice():
         return str(response)
 
     # Agregar prompt para recolectar respuesta usando tu voz
-    gather = Gather(input="speech", action="/voice", method="POST", timeout=6)
-    # No uses voz robótica aquí
+    gather = Gather(input="speech", action=request.url, method="POST", timeout=6)
     beep_msg = generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
     if beep_msg:
         gather.play(beep_msg)
-
     response.append(gather)
-
-    data["step"] += 1
 
     return str(response)
 
