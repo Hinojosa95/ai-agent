@@ -119,7 +119,6 @@ def voice():
             print("❌ No se generó el audio")
             response.say(saludo)
 
-        return str(response)  # salir antes de agregar gather
 
     # Paso 1 a N - preguntas
     elif data["step"] < len(preguntas):
