@@ -65,7 +65,7 @@ def enviar_correo(info_cliente):
     msg.set_content(f"Datos recopilados del cliente:\n\n{contenido}")
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.loginEMAIL_USER, EMAIL_PASSWORD)
+        smtp.login(EMAIL_USER, EMAIL_PASSWORD)
         smtp.send_message(msg)
 
 # --- Ruta de llamada principal ---
