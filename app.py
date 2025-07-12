@@ -12,7 +12,7 @@ import json
 # --- Cargar variables de entorno ---
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/static')
 client_data = defaultdict(dict)
 
 # --- Configuración de variables ---
@@ -46,6 +46,7 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
         path = f"./static/{filename}"
         with open(path, "wb") as f:
             f.write(response.content)
+            print("✅ Audio guardado en:", os.path.abspath(path))
             
         try:
             base_url = request.url_root
@@ -112,8 +113,10 @@ def voice():
         )
         audio_url = generar_audio_elevenlabs(saludo, "saludo.mp3")
         if audio_url:
+            print("✅ URL del audio generado:", audio_url)
             response.play(audio_url)
         else:
+            print("❌ No se generó el audio")
             response.say(saludo)
 
     # Paso 1 a N - preguntas
@@ -160,5 +163,5 @@ def static_files(filename):
 
 # --- Ejecutar App ---
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=True)
