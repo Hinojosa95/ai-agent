@@ -41,10 +41,12 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
         }
     }
     response = requests.post(url, json=payload, headers=headers)
+
     if response.status_code == 200:
         path = f"./static/{filename}"
         with open(path, "wb") as f:
             f.write(response.content)
+            
         try:
             base_url = request.url_root
         except RuntimeError:

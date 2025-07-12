@@ -42,6 +42,8 @@ for lead in leads:
     rep_name_raw = lead.get("Company_Rep1") or lead.get("Company_Rep2") or "there"
     rep_name_encoded = quote_plus(rep_name_raw)
 
+    twiml = f'<Response><Redirect method="POST">https://ai-agent-01hn.onrender.com/voice?rep={rep_name_encoded}</Redirect></Response>'
+
     try:
         call = client.calls.create(
         twiml=f'<Response><Redirect method="POST">https://ai-agent-01hn.onrender.com/voice?rep={rep_name_encoded}</Redirect></Response>',
