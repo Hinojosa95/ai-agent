@@ -105,12 +105,16 @@ def voice():
         data["step"] += 1  # avanzar solo si hubo respuesta
 
     # Paso 0 - saludo inicial
-    if data["step"] == 0:
+        if data["step"] == 0:
         saludo = (
             f"Hi {rep_name}, this is Bryan. I help truckers save up to $500 per month per truck on insurance, "
             f"get dispatching at just 4%, earn $3,000 to $4,000 a week, access gas cards with $2,500 credit, "
             f"and get help financing your down payment. Do you have 2 minutes for a quick quote?"
         )
+
+        if not os.path.exists("./static/saludo.mp3"):
+            generar_audio_elevenlabs(saludo, "saludo.mp3")
+
         audio_url = generar_audio_elevenlabs(saludo, "saludo.mp3")
         if audio_url:
             print("✅ URL del audio generado:", audio_url)
@@ -119,6 +123,7 @@ def voice():
             print("❌ No se generó el audio")
             response.say(saludo)
 
+        return str(response)  
 
     # Paso 1 a N - preguntas
     elif data["step"] < len(preguntas):
