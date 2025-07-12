@@ -144,7 +144,10 @@ def voice():
     beep_msg = generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
     if beep_msg:
         gather.play(beep_msg)
+
     response.append(gather)
+
+    data["step"] += 1
 
     return str(response)
 
