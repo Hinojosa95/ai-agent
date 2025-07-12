@@ -1,5 +1,6 @@
 from flask import Flask, request, send_from_directory
 from twilio.twiml.voice_response import VoiceResponse, Gather, Dial
+from collections import defaultdict
 import os
 from dotenv import load_dotenv
 import requests
@@ -11,8 +12,8 @@ import json
 # --- Cargar variables de entorno ---
 load_dotenv()
 
-app = Flask(__name__, static_url_path='/static')
-client_data = {}
+app = Flask(__name__)
+client_data = defaultdict(dict)
 
 # --- Configuración de variables ---
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
@@ -54,22 +55,18 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
         return None
 
 # --- Enviar correo ---
-def enviar_correo(datos):
+def enviar_correo(info_cliente):
     msg = EmailMessage()
-    msg['Subject'] = f"Nuevo lead: {datos.get('name', 'Sin nombre')}"
-    msg['From'] = EMAIL_USER
-    msg['To'] = EMAIL_RECEIVER
+    msg["Subject"] = "🚚 Nuevo lead calificado de seguro"
+    msg["From"] = EMAIL_USER
+    msg["To"] = EMAIL_RECEIVER
 
-    cuerpo = "".join([f"{k}: {v}\n" for k, v in datos.items()])
-    msg.set_content(f"Se ha recolectado la siguiente información:\n\n{cuerpo}")
+    contenido = "\n".join([f"{k}: {v}" for k, v in info_cliente.items()])
+    msg.set_content(f"Datos recopilados del cliente:\n\n{contenido}")
 
-    try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            smtp.login(EMAIL_USER, EMAIL_PASSWORD)
-            smtp.send_message(msg)
-            print("✅ Correo enviado correctamente")
-    except Exception as e:
-        print("❌ Error al enviar el correo:", e)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.loginEMAIL_USER, EMAIL_PASSWORD)
+        smtp.send_message(msg)
 
 # --- Ruta de llamada principal ---
 @app.route("/voice", methods=['GET', 'POST'])
@@ -81,12 +78,13 @@ def voice():
     speech_result = request.values.get("SpeechResult", "").strip()
     rep_name = request.args.get("rep", "Bryan")
 
+    # Inicializar cliente si no existe
     data = client_data.setdefault(from_number, {
         "step": 0,
         "responses": {},
-        "lang": "en"
     })
 
+    # Preguntas y claves
     preguntas = [
         "What year, make and model is your truck?",
         "Can you provide the VIN number?",
@@ -94,14 +92,16 @@ def voice():
         "What is your driver’s license number?"
     ]
     keys = ["truck", "vin", "dob", "license"]
+    
     response = VoiceResponse()
 
-    # Guardar respuesta anterior
+    # Guardar respuesta anterior solo si hay texto
     if data["step"] > 0 and speech_result:
         key = keys[data["step"] - 1]
         data["responses"][key] = speech_result
+        data["step"] += 1  # avanzar solo cuando sí hubo respuesta
 
-    # Paso 0 - Saludo
+    # Paso 0 - saludo inicial
     if data["step"] == 0:
         saludo = (
             f"Hi {rep_name}, this is Bryan. I help truckers save up to $500 per month per truck on insurance, "
@@ -114,7 +114,7 @@ def voice():
         else:
             response.say(saludo)
 
-    # Paso 1-N - Preguntas
+    # Paso 1 a N - preguntas
     elif data["step"] < len(preguntas):
         pregunta = preguntas[data["step"]]
         audio_url = generar_audio_elevenlabs(pregunta, f"step{data['step']}.mp3")
@@ -123,7 +123,7 @@ def voice():
         else:
             response.say(pregunta)
 
-    # Paso final - resumen, correo y transferencia
+    # Paso final: enviar correo + transferir
     else:
         enviar_correo(data["responses"])
         despedida = "Thanks for the information. I’ll now transfer you to a live agent."
@@ -138,12 +138,15 @@ def voice():
         response.append(dial)
         return str(response)
 
-    # Recolección de respuesta
-    gather = Gather(input="speech", action="/voice", method="POST", timeout=6)
-    gather.say("Please say your answer after the beep.", voice="Polly.Matthew")
+    # Agregar prompt para recolectar respuesta usando tu voz
+    gather = Gather(input="speech", action="/voice", method="POST", timeout=3)
+    audio_beep = generar_audio_elevenlabs("Please say your answer after the beep.", "beep_prompt.mp3")
+    if audio_beep:
+        gather.play(audio_beep)
+    else:
+        gather.say("Please say your answer after the beep.")
     response.append(gather)
 
-    data["step"] += 1
     return str(response)
 
 # --- Servir archivos estáticos ---

@@ -1,6 +1,7 @@
 import csv
 import time
 import os
+import urllib.parse
 from twilio.rest import Client
 from datetime import datetime
 from dotenv import load_dotenv
@@ -8,12 +9,12 @@ from urllib.parse import quote_plus
 
 load_dotenv()
 
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_SID")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER]):
-    raise ValueError("❌ Error: TWILIO_SID, TWILIO_AUTH_TOKEN o TWILIO_PHONE_NUMBER no están configuradas.")
+    raise ValueError("❌ Error: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN o TWILIO_PHONE_NUMBER no están configuradas.")
 
 
 client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -39,18 +40,19 @@ for lead in leads:
         phone = "+1" + phone
 
     rep_name_raw = lead.get("Company_Rep1") or lead.get("Company_Rep2") or "there"
-    rep_name = lead.get("Company_Rep1") or lead.get("Company_Rep2") or "there"
+    rep_name = urllib.parse.quote(rep_name_raw)
 
     try:
         call = client.calls.create(
-            twiml=f'<Response><Redirect method="POST">https://ai-agent-01hn.onrender.com/voice?rep={rep_name}</Redirect></Response>',
+            url=f"https://ai-agent-01hn.onrender.com/voice?rep={rep_name}",
             to=phone,
             from_=TWILIO_PHONE_NUMBER
         )
+        
         print(f"✅ Llamada iniciada a {phone}")
         reporte.append({
             "timestamp": datetime.now().isoformat(),
-            "lead": rep_name_raw
+            "lead": rep_name,
             "phone": phone,
             "status": "Llamada iniciada",
             "call_sid": call.sid
@@ -62,7 +64,7 @@ for lead in leads:
         print(f"❌ Error llamando a {phone}: {e}")
         reporte.append({
             "timestamp": datetime.now().isoformat(),
-            "lead": rep_name_raw
+            "lead": rep_name,
             "phone": phone,
             "status": f"Error: {e}"
         })
