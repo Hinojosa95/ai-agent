@@ -81,78 +81,85 @@ def voice():
     speech_result = request.values.get("SpeechResult", "").strip()
     rep_name = request.args.get("rep", "there")
 
-    # Inicializar cliente si no existe
-    data = client_data.setdefault(from_number, {
-        "step": 0,
-        "responses": {},
-    })
+    if from_number not in client_data:
+        client_data[from_number] = {"step": 0, "responses": {}}
 
-    # Preguntas y claves
+    data = client_data[from_number]
+
     preguntas = [
-        "What year, make and model is your truck?",
-        "Can you provide the VIN number?",
+        "What kind of truck do you have or plan to get?",
+        "What is the year make and model?",
         "What is your date of birth?",
-        "What is your driver’s license number?"
+        "Lastly what is your driver’s license number?"
     ]
-    keys = ["truck", "vin", "dob", "license"]
+    keys = ["truck", "model", "dob", "license"]
 
     response = VoiceResponse()
 
-    # Guardar respuesta anterior solo si hay texto
+    # Guardar respuesta anterior
     if data["step"] > 0 and speech_result:
-        key = keys[data["step"] - 1]
-        data["responses"][key] = speech_result
-        data["step"] += 1  # avanzar solo si hubo respuesta
+        if data["step"] - 1 < len(keys):
+            key = keys[data["step"] - 1]
+            data["responses"][key] = speech_result
+        data["step"] += 1
 
-    # Paso 0 - saludo inicial
+    # Paso 0 - saludo
     if data["step"] == 0:
         saludo = (
-            f"Hi {rep_name}, this is Bryan. I help truckers save up to $500 per month per truck on insurance, "
-            f"get dispatching at just 4%, earn $3,000 to $4,000 a week, access gas cards with $2,500 credit, "
-            f"and get help financing your down payment. Do you have 2 minutes for a quick quote?"
+            f"Hi {rep_name}, this is Bryan. I help trucks pay as low as $895 per month on truck insurance, "
+            f"and secure distpaching to help, that will guarantee you will make $3,000 to $4,000 a week, "
+            f"Do you have 2 minutes for a quick quote?"
         )
-
-        if not os.path.exists("./static/saludo.mp3"):
-            generar_audio_elevenlabs(saludo, "saludo.mp3")
-
-        audio_url = f"{request.url_root}static/saludo.mp3"
-        print("✅ URL del audio generado:", audio_url)
+        filename = "saludo.mp3"
+        if not os.path.exists(f"./static/{filename}"):
+            generar_audio_elevenlabs(saludo, filename)
+        audio_url = f"{request.url_root}static/{filename}"
         response.play(audio_url)
-
-        return str(response) 
+        data["step"] += 1
+        gather = Gather(input="speech", action=request.url, method="POST", timeout=6)
+        beep_path = "./static/beep_prompt.mp3"
+        if not os.path.exists(beep_path):
+            generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
+        beep_url = f"{request.url_root}static/beep_prompt.mp3"
+        gather.play(beep_url)
+        response.append(gather)
+        return str(response)
 
     # Paso 1 a N - preguntas
-    elif data["step"] < len(preguntas):
-        pregunta = preguntas[data["step"]]
-        audio_url = generar_audio_elevenlabs(pregunta, f"step{data['step']}.mp3")
-        if audio_url:
-            response.play(audio_url)
-        else:
-            response.say(pregunta)
+    elif data["step"] <= len(preguntas):
+        pregunta = preguntas[data["step"] - 1]
+        filename = f"step{data['step']}.mp3"
+        if not os.path.exists(f"./static/{filename}"):
+            generar_audio_elevenlabs(pregunta, filename)
+        audio_url = f"{request.url_root}static/{filename}"
+        response.play(audio_url)
 
-    # Paso final: enviar correo + transferir
+        gather = Gather(input="speech", action=request.url, method="POST", timeout=6)
+
+        beep_path = "./static/beep_prompt.mp3"
+        if not os.path.exists(beep_path):
+            generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
+        beep_url = f"{request.url_root}static/beep_prompt.mp3"
+        gather.play(beep_url)
+
+        response.append(gather)
+        return str(response)
+
+    # Paso final - enviar correo y transferir
     else:
         enviar_correo(data["responses"])
-        despedida = "Thanks for the information. I’ll now transfer you to a live agent."
-        audio_url = generar_audio_elevenlabs(despedida, "despedida.mp3")
-        if audio_url:
-            response.play(audio_url)
-        else:
-            response.say(despedida)
+        despedida = "Great, give me a quick second to get you to a licensed agent"
+        filename = "despedida.mp3"
+        if not os.path.exists(f"./static/{filename}"):
+            generar_audio_elevenlabs(despedida, filename)
+        audio_url = f"{request.url_root}static/{filename}"
+        response.play(audio_url)
 
         dial = Dial(caller_id=request.values.get("To"))
         dial.number(FORWARD_NUMBER)
         response.append(dial)
         return str(response)
 
-    # Agregar prompt para recolectar respuesta usando tu voz
-    gather = Gather(input="speech", action=request.url, method="POST", timeout=6)
-    beep_msg = generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
-    if beep_msg:
-        gather.play(beep_msg)
-    response.append(gather)
-
-    return str(response)
 
 # --- Servir archivos estáticos ---
 @app.route('/static/<path:filename>')
