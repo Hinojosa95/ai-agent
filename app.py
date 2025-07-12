@@ -76,7 +76,7 @@ def voice():
 
     from_number = request.values.get("From")
     speech_result = request.values.get("SpeechResult", "").strip()
-    rep_name = request.args.get("rep", "Bryan")
+    rep_name = request.args.get("rep", "there")
 
     # Inicializar cliente si no existe
     data = client_data.setdefault(from_number, {
@@ -139,12 +139,11 @@ def voice():
         return str(response)
 
     # Agregar prompt para recolectar respuesta usando tu voz
-    gather = Gather(input="speech", action="/voice", method="POST", timeout=3)
-    audio_beep = generar_audio_elevenlabs("Please say your answer after the beep.", "beep_prompt.mp3")
-    if audio_beep:
-        gather.play(audio_beep)
-    else:
-        gather.say("Please say your answer after the beep.")
+    gather = Gather(input="speech", action="/voice", method="POST", timeout=6)
+    # No uses voz robótica aquí
+    beep_msg = generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
+    if beep_msg:
+        gather.play(beep_msg)
     response.append(gather)
 
     return str(response)

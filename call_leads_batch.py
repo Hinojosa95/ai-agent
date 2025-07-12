@@ -40,19 +40,19 @@ for lead in leads:
         phone = "+1" + phone
 
     rep_name_raw = lead.get("Company_Rep1") or lead.get("Company_Rep2") or "there"
-    rep_name = urllib.parse.quote(rep_name_raw)
+    rep_name_encoded = quote_plus(rep_name_raw)
 
     try:
         call = client.calls.create(
-            url=f"https://ai-agent-01hn.onrender.com/voice?rep={rep_name}",
-            to=phone,
-            from_=TWILIO_PHONE_NUMBER
-        )
+        twiml=f'<Response><Redirect method="POST">https://ai-agent-01hn.onrender.com/voice?rep={rep_name_encoded}</Redirect></Response>',
+        to=phone,
+        from_=TWILIO_PHONE_NUMBER
+    )
         
         print(f"✅ Llamada iniciada a {phone}")
         reporte.append({
             "timestamp": datetime.now().isoformat(),
-            "lead": rep_name,
+            "lead": rep_name_raw,
             "phone": phone,
             "status": "Llamada iniciada",
             "call_sid": call.sid
