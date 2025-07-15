@@ -119,13 +119,12 @@ def voice():
         filename = "saludo.mp3"
         path = f"./static/{filename}"
 
-        if not os.path.exists(path):
-            print("⏳ Generando saludo.mp3...")
+        print("⏳ Generando saludo.mp3...")
         generar_audio_elevenlabs(saludo, filename)
-        if os .path.exists(path):
+        if os.path.exists(path):
             print("✅ Saludo generado correctamente.")
         else:
-            print("❌ Fallo la generacion de saludo.mp3")
+            print("❌ Falló la generación de saludo.mp3")
             response.say(saludo)
 
         audio_url = f"{request.url_root}static/{filename}"
