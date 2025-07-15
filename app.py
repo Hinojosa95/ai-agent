@@ -117,8 +117,9 @@ def voice():
         )
         filename = "saludo.mp3"
         path = f"./static/{filename}"
-        if not os.path.exists(path):
-            generar_audio_elevenlabs(saludo, filename)
+
+        filename = "saludo.mp3"
+        generar_audio_elevenlabs(saludo, filename)
         audio_url = f"{request.url_root}static/{filename}"
         response.play(audio_url)
         data["step"] += 1
