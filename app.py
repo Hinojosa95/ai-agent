@@ -110,28 +110,30 @@ def voice():
     data = client_data[from_number]
     response = VoiceResponse()
 
+    # --- Paso inicial: saludo ---
     if data["step"] == 0:
         saludo = (
             f"Hi {rep_name}, this is Bryan. I help trucks pay as low as $895 per month on truck insurance, "
             f"and secure dispatching to help, that will guarantee you will make $3,000 to $4,000 a week. "
             f"Do you have 2 minutes for a quick quote?"
         )
-        filename = "saludo.mp3"
+        filename = "saludo_nuevo.mp3"
         path = f"./static/{filename}"
 
-        print("⏳ Generando saludo.mp3...")
-        generar_audio_elevenlabs(saludo, filename)
-        if os.path.exists(path):
-            print("✅ Saludo generado correctamente.")
-        else:
-            print("❌ Falló la generación de saludo.mp3")
-            response.say(saludo)
+        if not os.path.exists(path):
+            print("⏳ Generando saludo.mp3...")
+            generar_audio_elevenlabs(saludo, filename)
+            if os.path.exists(path):
+                print("✅ Saludo generado correctamente.")
+            else:
+                print("❌ Falló la generación de saludo.mp3")
+                response.say(saludo)
 
         audio_url = f"{request.url_root}static/{filename}"
         response.play(audio_url)
         data["step"] += 1
-        return str(response)
 
+    # --- Pasos siguientes: recolectar respuestas y avanzar ---
     elif data["step"] <= len(data["preguntas"]):
         key, pregunta = data["preguntas"][data["step"] - 1]
 
@@ -155,8 +157,8 @@ def voice():
             dial = Dial(caller_id=request.values.get("To"))
             dial.number(FORWARD_NUMBER)
             response.append(dial)
-            return str(response)
 
+    # --- Gather para capturar respuesta ---
     gather = Gather(input="speech", action=request.url, method="POST", timeout=6)
     beep_path = "./static/beep_prompt.mp3"
     if not os.path.exists(beep_path):
