@@ -57,6 +57,19 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
         print("❌ Error generando audio:", response.status_code, response.text)
         return None
 
+# --- Generar respuesta con GPT ---
+def responder_con_gpt(texto_cliente):
+    respuesta = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "Eres un agente de seguros amable y profesional que recopila información del cliente para cotizar un seguro de camión. Haz una pregunta a la vez. Si ya tienes toda la información, di que lo vas a transferir a un agente humano."},
+            {"role": "user", "content": texto_cliente}
+        ],
+        temperature=0.7,
+        max_tokens=100
+    )
+    return respuesta.choices[0].message["content"]
+
 # --- Enviar correo ---
 def enviar_correo(info_cliente):
     msg = EmailMessage()
@@ -82,84 +95,68 @@ def voice():
     rep_name = request.args.get("rep", "there")
 
     if from_number not in client_data:
-        client_data[from_number] = {"step": 0, "responses": {}}
+        client_data[from_number] = {
+            "step": 0,
+            "responses": {},
+            "preguntas": [
+                ("truck", "What kind of truck do you have or plan to get?"),
+                ("model", "What is the year, make, and model of your truck?"),
+                ("dob", "What is your date of birth?"),
+                ("license", "What is your driver's license number?")
+            ]
+        }
 
     data = client_data[from_number]
-
-    preguntas = [
-        "What kind of truck do you have or plan to get?",
-        "What is the year make and model?",
-        "What is your date of birth?",
-        "Lastly what is your driver’s license number?"
-    ]
-    keys = ["truck", "model", "dob", "license"]
-
     response = VoiceResponse()
 
-    # Guardar respuesta anterior
-    if data["step"] > 0 and speech_result:
-        if data["step"] - 1 < len(keys):
-            key = keys[data["step"] - 1]
-            data["responses"][key] = speech_result
-        data["step"] += 1
-
-    # Paso 0 - saludo
     if data["step"] == 0:
         saludo = (
             f"Hi {rep_name}, this is Bryan. I help trucks pay as low as $895 per month on truck insurance, "
-            f"and secure distpaching to help, that will guarantee you will make $3,000 to $4,000 a week, "
+            f"and secure dispatching to help, that will guarantee you will make $3,000 to $4,000 a week. "
             f"Do you have 2 minutes for a quick quote?"
         )
         filename = "saludo.mp3"
-        if not os.path.exists(f"./static/{filename}"):
+        path = f"./static/{filename}"
+        if not os.path.exists(path):
             generar_audio_elevenlabs(saludo, filename)
         audio_url = f"{request.url_root}static/{filename}"
         response.play(audio_url)
         data["step"] += 1
-        gather = Gather(input="speech", action=request.url, method="POST", timeout=6)
-        beep_path = "./static/beep_prompt.mp3"
-        if not os.path.exists(beep_path):
-            generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
-        beep_url = f"{request.url_root}static/beep_prompt.mp3"
-        gather.play(beep_url)
-        response.append(gather)
-        return str(response)
 
-    # Paso 1 a N - preguntas
-    elif data["step"] <= len(preguntas):
-        pregunta = preguntas[data["step"] - 1]
-        filename = f"step{data['step']}.mp3"
-        if not os.path.exists(f"./static/{filename}"):
+    elif data["step"] <= len(data["preguntas"]):
+        key, pregunta = data["preguntas"][data["step"] - 1]
+
+        if speech_result:
+            data["responses"][key] = speech_result
+            data["step"] += 1
+
+        if data["step"] <= len(data["preguntas"]):
+            key, pregunta = data["preguntas"][data["step"] - 1]
+            filename = f"step{data['step']}.mp3"
             generar_audio_elevenlabs(pregunta, filename)
-        audio_url = f"{request.url_root}static/{filename}"
-        response.play(audio_url)
+            audio_url = f"{request.url_root}static/{filename}"
+            response.play(audio_url)
+        else:
+            despedida = "Great, give me a second to connect you with a licensed agent."
+            generar_audio_elevenlabs(despedida, "despedida.mp3")
+            audio_url = f"{request.url_root}static/despedida.mp3"
+            response.play(audio_url)
 
-        gather = Gather(input="speech", action=request.url, method="POST", timeout=6)
+            enviar_correo(data["responses"])
+            dial = Dial(caller_id=request.values.get("To"))
+            dial.number(FORWARD_NUMBER)
+            response.append(dial)
+            return str(response)
 
-        beep_path = "./static/beep_prompt.mp3"
-        if not os.path.exists(beep_path):
-            generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
-        beep_url = f"{request.url_root}static/beep_prompt.mp3"
-        gather.play(beep_url)
+    gather = Gather(input="speech", action=request.url, method="POST", timeout=6)
+    beep_path = "./static/beep_prompt.mp3"
+    if not os.path.exists(beep_path):
+        generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
+    beep_url = f"{request.url_root}static/beep_prompt.mp3"
+    gather.play(beep_url)
+    response.append(gather)
 
-        response.append(gather)
-        return str(response)
-
-    # Paso final - enviar correo y transferir
-    else:
-        enviar_correo(data["responses"])
-        despedida = "Great, give me a quick second to get you to a licensed agent"
-        filename = "despedida.mp3"
-        if not os.path.exists(f"./static/{filename}"):
-            generar_audio_elevenlabs(despedida, filename)
-        audio_url = f"{request.url_root}static/{filename}"
-        response.play(audio_url)
-
-        dial = Dial(caller_id=request.values.get("To"))
-        dial.number(FORWARD_NUMBER)
-        response.append(dial)
-        return str(response)
-
+    return str(response)
 
 # --- Servir archivos estáticos ---
 @app.route('/static/<path:filename>')
