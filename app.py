@@ -41,22 +41,34 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
             "similarity_boost": 0.85
         }
     }
-    response = requests.post(url, json=payload, headers=headers)
 
-    if response.status_code == 200:
-        path = f"./static/{filename}"
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"❌ Error en la petición a ElevenLabs: {e}")
+        return None
+
+    # Asegurar que el directorio ./static existe
+    os.makedirs("static", exist_ok=True)
+
+    # Guardar el audio como archivo MP3
+    path = os.path.join("static", filename)
+    try:
         with open(path, "wb") as f:
             f.write(response.content)
-            print("✅ Audio guardado en:", os.path.abspath(path))
-
-        try:
-            base_url = request.url_root
-        except RuntimeError:
-            base_url = "http://localhost:5000/"
-        return f"{base_url}static/{filename}"
-    else:
-        print("❌ Error generando audio:", response.status_code, response.text)
+        print("✅ Audio guardado en:", os.path.abspath(path))
+    except Exception as e:
+        print(f"❌ Error al guardar el audio: {e}")
         return None
+
+    # Construir URL completa para Twilio (Render o localhost)
+    try:
+        base_url = request.url_root
+    except RuntimeError:
+        base_url = "http://localhost:5000/"
+
+    return f"{base_url}static/{filename}"
 
 # --- Generar respuesta con GPT ---
 def responder_con_gpt(texto_cliente):
@@ -118,20 +130,15 @@ def voice():
             f"Do you have 2 minutes for a quick quote?"
         )
         filename = "saludo_nuevo.mp3"
-        path = f"./static/{filename}"
-
-        
-        print("⏳ Generando saludo.mp3...")
         audio_url = generar_audio_elevenlabs(saludo, filename)
+
         if audio_url:
-            print("✅ Saludo generado correctamente.")
             response.play(audio_url)
         else:
-            print("❌ Falló la generación de saludo.mp3")
             response.say(saludo)
 
-        response.play(audio_url)
         data["step"] += 1
+        return str(response)
 
     # --- Pasos siguientes: recolectar respuestas y avanzar ---
     elif data["step"] <= len(data["preguntas"]):
