@@ -8,6 +8,7 @@ import smtplib
 from email.message import EmailMessage
 import openai
 import json
+import socket
 
 # --- Cargar variables de entorno ---
 load_dotenv()
@@ -118,11 +119,19 @@ def voice():
         filename = "saludo.mp3"
         path = f"./static/{filename}"
 
-        filename = "saludo.mp3"
+        if not os.path.exists(path):
+            print("⏳ Generando saludo.mp3...")
         generar_audio_elevenlabs(saludo, filename)
+        if os .path.exists(path):
+            print("✅ Saludo generado correctamente.")
+        else:
+            print("❌ Fallo la generacion de saludo.mp3")
+            response.say(saludo)
+
         audio_url = f"{request.url_root}static/{filename}"
         response.play(audio_url)
         data["step"] += 1
+        return str(response)
 
     elif data["step"] <= len(data["preguntas"]):
         key, pregunta = data["preguntas"][data["step"] - 1]
@@ -165,6 +174,14 @@ def static_files(filename):
     return send_from_directory('static', filename)
 
 # --- Ejecutar App ---
+def encontrar_puerto_libre(puerto_inicial=5001, puerto_final=5010):
+    for port in range(puerto_inicial, puerto_final + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            if sock.connect_ex(("localhost", port)) != 0:
+                return port
+    raise RuntimeError("❌ No hay puertos disponibles entre 5001 y 5010.")
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5001))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    port = encontrar_puerto_libre()
+    print(f"🚀 Ejecutando en puerto libre: {port}")
+    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
