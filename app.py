@@ -36,7 +36,7 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     }
     payload = {
         "text": texto,
-        "model_id": "eleven_multilingual_v2",
+        "model_id": "eleven_monolingual_v1",  # Usa este si tu voz está en inglés
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.85
@@ -46,38 +46,28 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     print(f"🔁 Enviando solicitud a ElevenLabs con VOICE_ID: {VOICE_ID}")
     response = requests.post(url, json=payload, headers=headers)
 
-    os.makedirs("static", exist_ok=True)
-    path = f"./static/{filename}"
-
-    if response.status_code == 200:
-        with open(path, "wb") as f:
-            f.write(response.content)
-        print(f"✅ Audio guardado en: {path}")
-
-        # Verificar accesibilidad del archivo desde el servidor
-        try:
-            base_url = request.url_root
-        except RuntimeError:
-            base_url = "http://localhost:5000/"
-
-        full_url = f"{base_url}static/{filename}"
-
-        # Hacer una solicitud HEAD para asegurarse de que el archivo está disponible
-        try:
-            test_response = requests.head(full_url)
-            if test_response.status_code == 200:
-                print("✅ Archivo accesible públicamente:", full_url)
-                return full_url
-            else:
-                print(f"⚠️ Archivo no accesible aún (status {test_response.status_code}): {full_url}")
-                return None
-        except Exception as e:
-            print(f"❌ Error verificando accesibilidad del audio: {e}")
-            return None
-    else:
+    if response.status_code != 200:
         print(f"❌ Error al generar audio: {response.status_code}")
         print(f"📄 Detalle del error: {response.text}")
         return None
+
+    os.makedirs("static", exist_ok=True)
+    path = os.path.join("static", filename)
+
+    try:
+        with open(path, "wb") as f:
+            f.write(response.content)
+        print("✅ Audio guardado en:", os.path.abspath(path))
+    except Exception as e:
+        print(f"❌ Error al guardar el audio: {e}")
+        return None
+
+    try:
+        base_url = request.url_root
+    except RuntimeError:
+        base_url = "http://localhost:5000/"
+
+    return f"{base_url}static/{filename}"
 
 # --- Generar respuesta con GPT ---
 def responder_con_gpt(texto_cliente):
@@ -148,17 +138,20 @@ def voice():
         print("⏳ Generando saludo con voz clonada...")
         audio_url = generar_audio_elevenlabs(saludo, filename)
 
-        time.sleep(1)  # Asegurar disponibilidad en Render
+        for _ in range(10):
+        if os.path.exists(path):
+            break
+        time.sleep(0.5)
 
-        if audio_url:
-            print("✅ Saludo generado correctamente:", audio_url)
-            response.play(audio_url)
-        else:
-            print("⚠️ Audio no disponible, usando texto como fallback.")
-            response.say(saludo)
+    if os.path.exists(path) and audio_url:
+        print("✅ Saludo listo:", audio_url)
+        response.play(audio_url)
+    else:
+        print("⚠️ No se pudo generar el audio, usando fallback.")
+        response.say(saludo)
 
-        data["step"] += 1
-        return str(response)
+    data["step"] += 1
+    return str(response)
 
     # --- Pasos siguientes: recolectar respuestas y avanzar ---
     elif data["step"] <= len(data["preguntas"]):
