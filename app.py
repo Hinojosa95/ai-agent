@@ -130,11 +130,24 @@ def voice():
             f"Do you have 2 minutes for a quick quote?"
         )
         filename = "saludo_nuevo.mp3"
+        path = f"./static/{filename}"
+
+        # Eliminar si ya existía
+        if os.path.exists(path):
+            os.remove(path)
+
+        print("⏳ Generando saludo con voz clonada...")
         audio_url = generar_audio_elevenlabs(saludo, filename)
 
+        # Esperar un poco para asegurar que Render sirva el archivo
+        import time
+        time.sleep(1)
+
         if audio_url:
+            print("✅ Saludo generado correctamente:", audio_url)
             response.play(audio_url)
         else:
+            print("⚠️ Audio no disponible, usando texto como fallback.")
             response.say(saludo)
 
         data["step"] += 1
