@@ -139,19 +139,19 @@ def voice():
         audio_url = generar_audio_elevenlabs(saludo, filename)
 
         for _ in range(10):
-        if os.path.exists(path):
-            break
-        time.sleep(0.5)
+            if os.path.exists(path):
+                break
+            time.sleep(0.5)
 
-    if os.path.exists(path) and audio_url:
-        print("✅ Saludo listo:", audio_url)
-        response.play(audio_url)
-    else:
-        print("⚠️ No se pudo generar el audio, usando fallback.")
-        response.say(saludo)
+        if os.path.exists(path) and audio_url:
+            print("✅ Saludo listo:", audio_url)
+            response.play(audio_url)
+        else:
+            print("⚠️ No se pudo generar el audio, usando fallback.")
+            response.say(saludo)
 
-    data["step"] += 1
-    return str(response)
+        data["step"] += 1
+        return str(response)
 
     # --- Pasos siguientes: recolectar respuestas y avanzar ---
     elif data["step"] <= len(data["preguntas"]):
