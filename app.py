@@ -9,6 +9,7 @@ from email.message import EmailMessage
 import openai
 import json
 import socket
+import time
 
 # --- Cargar variables de entorno ---
 load_dotenv()
@@ -35,40 +36,48 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     }
     payload = {
         "text": texto,
-        "model_id": "eleven_monolingual_v1",
+        "model_id": "eleven_multilingual_v2",
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.85
         }
     }
 
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        print(f"❌ Error en la petición a ElevenLabs: {e}")
-        return None
+    print(f"🔁 Enviando solicitud a ElevenLabs con VOICE_ID: {VOICE_ID}")
+    response = requests.post(url, json=payload, headers=headers)
 
-    # Asegurar que el directorio ./static existe
     os.makedirs("static", exist_ok=True)
+    path = f"./static/{filename}"
 
-    # Guardar el audio como archivo MP3
-    path = os.path.join("static", filename)
-    try:
+    if response.status_code == 200:
         with open(path, "wb") as f:
             f.write(response.content)
-        print("✅ Audio guardado en:", os.path.abspath(path))
-    except Exception as e:
-        print(f"❌ Error al guardar el audio: {e}")
+        print(f"✅ Audio guardado en: {path}")
+
+        # Verificar accesibilidad del archivo desde el servidor
+        try:
+            base_url = request.url_root
+        except RuntimeError:
+            base_url = "http://localhost:5000/"
+
+        full_url = f"{base_url}static/{filename}"
+
+        # Hacer una solicitud HEAD para asegurarse de que el archivo está disponible
+        try:
+            test_response = requests.head(full_url)
+            if test_response.status_code == 200:
+                print("✅ Archivo accesible públicamente:", full_url)
+                return full_url
+            else:
+                print(f"⚠️ Archivo no accesible aún (status {test_response.status_code}): {full_url}")
+                return None
+        except Exception as e:
+            print(f"❌ Error verificando accesibilidad del audio: {e}")
+            return None
+    else:
+        print(f"❌ Error al generar audio: {response.status_code}")
+        print(f"📄 Detalle del error: {response.text}")
         return None
-
-    # Construir URL completa para Twilio (Render o localhost)
-    try:
-        base_url = request.url_root
-    except RuntimeError:
-        base_url = "http://localhost:5000/"
-
-    return f"{base_url}static/{filename}"
 
 # --- Generar respuesta con GPT ---
 def responder_con_gpt(texto_cliente):
@@ -139,9 +148,7 @@ def voice():
         print("⏳ Generando saludo con voz clonada...")
         audio_url = generar_audio_elevenlabs(saludo, filename)
 
-        # Esperar un poco para asegurar que Render sirva el archivo
-        import time
-        time.sleep(1)
+        time.sleep(1)  # Asegurar disponibilidad en Render
 
         if audio_url:
             print("✅ Saludo generado correctamente:", audio_url)
