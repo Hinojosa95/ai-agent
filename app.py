@@ -48,21 +48,21 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     print(f"🔁 Enviando solicitud a ElevenLabs con VOICE_ID: {VOICE_ID}")
     response = requests.post(url, json=payload, headers=headers)
 
-if response.status_code == 200:
-    path = f"./static/{filename}"
-    print("📦 Intentando guardar en:", os.path.abspath(path))
-
-    try:
-        with open(path, "wb") as f:
-            f.write(response.content)
-        print("✅ Archivo guardado correctamente.")
-        print("📏 Tamaño del archivo:", os.path.getsize(path), "bytes")
-        print("📂 Archivos actuales en static/:", os.listdir("static"))
-    except Exception as e:
-        print("❌ Error al guardar archivo:", str(e))
+    if response.status_code == 200:
+        path = f"./static/{filename}"
+        try:
+            with open(path, "wb") as f:
+                f.write(response.content)
+            print("✅ Audio guardado en:", os.path.abspath(path))
+            print("📂 Archivos en static/:", os.listdir("static"))
+            return f"{request.url_root}static/{filename}"
+        except Exception as e:
+            print("❌ Error al guardar archivo:", str(e))
+            return None
+    else:
+        print("❌ Error al generar audio:", response.status_code)
+        print("📄 Detalle:", response.text)
         return None
-
-    return f"{request.url_root}static/{filename}"
 
 
 # --- Generar respuesta con GPT ---
