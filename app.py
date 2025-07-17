@@ -58,6 +58,7 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
             print("✅ Archivo guardado correctamente.")
             print("📏 Tamaño del archivo:", os.path.getsize(path), "bytes")
             print("📂 Archivos actuales en static/:", os.listdir("static"))
+            print(f"🌐 URL que se intentará reproducir: {request.url_root}static/{filename}")
         except Exception as e:
             print("❌ Error al guardar archivo:", str(e))
             return None
@@ -139,6 +140,10 @@ def voice():
             if os.path.exists(path):
                 break
             time.sleep(0.5)
+
+            print("🔍 Audio URL devuelto por la función:", audio_url)
+            print("📂 Contenido actual de static/:", os.listdir("static"))
+            print("📄 Existe archivo?", os.path.exists(path))
 
         if os.path.exists(path) and audio_url:
             print("✅ Saludo listo:", audio_url)
