@@ -50,20 +50,36 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
 
     if response.status_code == 200:
         path = f"./static/{filename}"
-        print("📦 Intentando guardar en:", os.path.abspath(path))
+        print("📦 Guardando audio localmente en:", os.path.abspath(path))
 
         try:
             with open(path, "wb") as f:
                 f.write(response.content)
-            print("✅ Archivo guardado correctamente.")
-            print("📏 Tamaño del archivo:", os.path.getsize(path), "bytes")
-            print("📂 Archivos actuales en static/:", os.listdir("static"))
-            print(f"🌐 URL que se intentará reproducir: {request.url_root}static/{filename}")
+            print("✅ Archivo guardado.")
+            print("📏 Tamaño:", os.path.getsize(path), "bytes")
         except Exception as e:
-            print("❌ Error al guardar archivo:", str(e))
+            print("❌ Error al guardar archivo local:", str(e))
             return None
 
-        return f"{request.url_root}static/{filename}"
+        # ⬆️ Subir a tmpfiles.org
+        try:
+            with open(path, "rb") as audio_file:
+                upload = requests.post("https://tmpfiles.org/api/v1/upload", files={"file": audio_file})
+            if upload.status_code == 200:
+                file_url = upload.json().get("data", {}).get("url")
+                print(f"🔗 Archivo disponible en: {file_url}")
+                return file_url
+            else:
+                print("❌ Error subiendo a tmpfiles:", upload.text)
+                return None
+        except Exception as e:
+            print("❌ Error en subida a tmpfiles:", str(e))
+            return None
+
+    else:
+        print(f"❌ Error al generar audio: {response.status_code}")
+        print(f"📄 Detalle: {response.text}")
+        return None
 
 # --- Generar respuesta con GPT ---
 def responder_con_gpt(texto_cliente):
