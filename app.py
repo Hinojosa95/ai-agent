@@ -14,7 +14,7 @@ import time
 # --- Cargar variables de entorno ---
 load_dotenv()
 
-app = Flask(__name__, static_url_path='/static')
+app = Flask(__name__, static_folder='static', static_url_path='/static')
 client_data = defaultdict(dict)
 
 # --- Configuración de variables ---
@@ -29,7 +29,7 @@ openai.api_key = OPENAI_API_KEY
 
 # --- Generar audio ElevenLabs ---
 def generar_audio_elevenlabs(texto, filename="audio.mp3"):
-    os.makedirs("static", exist_ok=True)  # Asegura que exista antes de guardar
+    os.makedirs("static", exist_ok=True)
 
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
@@ -50,16 +50,26 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
 
     if response.status_code == 200:
         path = f"./static/{filename}"
-
         with open(path, "wb") as f:
             f.write(response.content)
 
-        time.sleep(1)
+        print(f"✅ Audio guardado localmente en: {os.path.abspath(path)}")
 
-        print(f"✅ Audio guardado en: {os.path.abspath(path)}")
-        print(f"📂 Archivos actuales en static/: {os.listdir('./static')}")
+        # ⬆️ Subir a file.io
+        try:
+            with open(path, "rb") as audio_file:
+                upload = requests.post("https://file.io", files={"file": audio_file})
 
-        return f"{request.url_root}static/{filename}"
+            if upload.status_code == 200:
+                file_url = upload.json().get("link")
+                print(f"🔗 Audio accesible en file.io: {file_url}")
+                return file_url
+            else:
+                print("❌ Error al subir a file.io:", upload.text)
+                return None
+        except Exception as e:
+            print("❌ Error subiendo a file.io:", str(e))
+            return None
     else:
         print(f"❌ Error al generar audio: {response.status_code}")
         print(f"📄 Detalle del error: {response.text}")
