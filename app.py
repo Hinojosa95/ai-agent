@@ -211,6 +211,10 @@ def encontrar_puerto_libre(puerto_inicial=5001, puerto_final=5010):
                 return port
     raise RuntimeError("❌ No hay puertos disponibles entre 5001 y 5010.")
 
+@app.route("/")
+def home():
+    return "🚀 AI Agent está corriendo correctamente."
+
 if __name__ == "__main__":
     port = encontrar_puerto_libre()
     print(f"🚀 Ejecutando en puerto libre: {port}")
