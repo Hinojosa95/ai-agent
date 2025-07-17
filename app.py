@@ -1,4 +1,4 @@
-from flask import Flask, request, send_from_directory
+from flask import Flask, request
 from twilio.twiml.voice_response import VoiceResponse, Gather, Dial
 from collections import defaultdict
 import os
@@ -7,14 +7,13 @@ import requests
 import smtplib
 from email.message import EmailMessage
 import openai
-import json
 import socket
 import time
 
 # --- Cargar variables de entorno ---
 load_dotenv()
 
-app = Flask(__name__, static_folder='static', static_url_path='/static')
+app = Flask(__name__)
 client_data = defaultdict(dict)
 
 # --- Configuración de variables ---
@@ -27,10 +26,8 @@ FORWARD_NUMBER = os.getenv("FORWARD_NUMBER")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_API_KEY
 
-# --- Generar audio ElevenLabs ---
+# --- Generar audio ElevenLabs y subirlo a tmpfiles.org ---
 def generar_audio_elevenlabs(texto, filename="audio.mp3"):
-    os.makedirs("static", exist_ok=True)
-
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
@@ -49,44 +46,33 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     response = requests.post(url, json=payload, headers=headers)
 
     if response.status_code == 200:
-        path = f"./static/{filename}"
-        print("📦 Guardando audio localmente en:", os.path.abspath(path))
+        temp_path = f"/tmp/{filename}"
+        with open(temp_path, "wb") as f:
+            f.write(response.content)
 
         try:
-            with open(path, "wb") as f:
-                f.write(response.content)
-            print("✅ Archivo guardado.")
-            print("📏 Tamaño:", os.path.getsize(path), "bytes")
-        except Exception as e:
-            print("❌ Error al guardar archivo local:", str(e))
-            return None
-
-        # ⬆️ Subir a tmpfiles.org
-        try:
-            with open(path, "rb") as audio_file:
+            with open(temp_path, "rb") as audio_file:
                 upload = requests.post("https://tmpfiles.org/api/v1/upload", files={"file": audio_file})
-            if upload.status_code == 200:
-                file_url = upload.json().get("data", {}).get("url")
-                print(f"🔗 Archivo disponible en: {file_url}")
-                return file_url
-            else:
-                print("❌ Error subiendo a tmpfiles:", upload.text)
-                return None
-        except Exception as e:
-            print("❌ Error en subida a tmpfiles:", str(e))
-            return None
 
-    else:
-        print(f"❌ Error al generar audio: {response.status_code}")
-        print(f"📄 Detalle: {response.text}")
-        return None
+            if upload.status_code == 200:
+                result = upload.json()
+                file_url = result.get("data", {}).get("url")
+                if file_url:
+                    file_url = file_url.replace("/", "https://tmpfiles.org/")
+                    print(f"✅ Audio disponible en: {file_url}")
+                    return file_url
+        except Exception as e:
+            print("❌ Error al subir archivo:", str(e))
+
+    print(f"❌ Error al generar audio: {response.status_code}")
+    return None
 
 # --- Generar respuesta con GPT ---
 def responder_con_gpt(texto_cliente):
     respuesta = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "Eres un agente de seguros amable y profesional que recopila información del cliente para cotizar un seguro de camión. Haz una pregunta a la vez. Si ya tienes toda la información, di que lo vas a transferir a un agente humano."},
+            {"role": "system", "content": "Eres un agente de seguros amable y profesional..."},
             {"role": "user", "content": texto_cliente}
         ],
         temperature=0.7,
@@ -136,43 +122,17 @@ def voice():
     # --- Paso inicial: saludo ---
     if data["step"] == 0:
         saludo = (
-            f"Hi {rep_name}, this is Bryan. I help trucks pay as low as $895 per month on truck insurance, "
-            f"and secure dispatching to help, that will guarantee you will make $3,000 to $4,000 a week. "
-            f"Do you have 2 minutes for a quick quote?"
+            f"Hi {rep_name}, this is Bryan. I help trucks pay as low as $895 per month on truck insurance..."
         )
-        filename = "saludo_nuevo.mp3"
-        path = f"./static/{filename}"
-
-        # Eliminar si ya existía
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            pass
-
-        print("⏳ Generando saludo con voz clonada...")
-        audio_url = generar_audio_elevenlabs(saludo, filename)
-
-        for _ in range(10):
-            if os.path.exists(path):
-                break
-            time.sleep(0.5)
-
-            print("🔍 Audio URL devuelto por la función:", audio_url)
-            print("📂 Contenido actual de static/:", os.listdir("static"))
-            print("📄 Existe archivo?", os.path.exists(path))
-
-        if os.path.exists(path) and audio_url:
-            print("✅ Saludo listo:", audio_url)
-            print("🎯 Reproduciendo audio desde:", audio_url) 
+        audio_url = generar_audio_elevenlabs(saludo, "saludo.mp3")
+        if audio_url:
             response.play(audio_url)
         else:
-            print("⚠️ No se pudo generar el audio, usando fallback.")
             response.say(saludo)
-
         data["step"] += 1
         return str(response)
 
-    # --- Pasos siguientes: recolectar respuestas y avanzar ---
+    # --- Pasos siguientes ---
     elif data["step"] <= len(data["preguntas"]):
         key, pregunta = data["preguntas"][data["step"] - 1]
 
@@ -181,51 +141,38 @@ def voice():
             data["step"] += 1
 
         if data["step"] <= len(data["preguntas"]):
-            key, pregunta = data["preguntas"][data["step"] - 1]
-            filename = f"step{data['step']}.mp3"
-            generar_audio_elevenlabs(pregunta, filename)
-            audio_url = f"{request.url_root}static/{filename}"
-            response.play(audio_url)
+            _, siguiente = data["preguntas"][data["step"] - 1]
+            audio_url = generar_audio_elevenlabs(siguiente, f"step{data['step']}.mp3")
+            if audio_url:
+                response.play(audio_url)
+            else:
+                response.say(siguiente)
         else:
             despedida = "Great, give me a second to connect you with a licensed agent."
-            generar_audio_elevenlabs(despedida, "despedida.mp3")
-            audio_url = f"{request.url_root}static/despedida.mp3"
-            response.play(audio_url)
-
+            audio_url = generar_audio_elevenlabs(despedida, "despedida.mp3")
+            if audio_url:
+                response.play(audio_url)
+            else:
+                response.say(despedida)
             enviar_correo(data["responses"])
             dial = Dial(caller_id=request.values.get("To"))
             dial.number(FORWARD_NUMBER)
             response.append(dial)
 
-    # --- Gather para capturar respuesta ---
     gather = Gather(input="speech", action=request.url, method="POST", timeout=6)
-    beep_path = "./static/beep_prompt.mp3"
-    if not os.path.exists(beep_path):
-        generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
-    beep_url = f"{request.url_root}static/beep_prompt.mp3"
-    gather.play(beep_url)
+    beep = generar_audio_elevenlabs("Alright, go ahead and answer now.", "beep_prompt.mp3")
+    if beep:
+        gather.play(beep)
+    else:
+        gather.say("Alright, go ahead and answer now.")
     response.append(gather)
-
     return str(response)
-
-# --- Servir archivos estáticos ---
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    return send_from_directory('static', filename)
-
-# --- Ejecutar App ---
-def encontrar_puerto_libre(puerto_inicial=5001, puerto_final=5010):
-    for port in range(puerto_inicial, puerto_final + 1):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(("localhost", port)) != 0:
-                return port
-    raise RuntimeError("❌ No hay puertos disponibles entre 5001 y 5010.")
 
 @app.route("/")
 def home():
-    return "🚀 AI Agent está corriendo correctamente."
+    return "🚀 AI Agent is running!"
 
 if __name__ == "__main__":
-    port = encontrar_puerto_libre()
-    print(f"🚀 Ejecutando en puerto libre: {port}")
+    port = 5001
+    print(f"🚀 Running on port {port}")
     app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
