@@ -50,20 +50,19 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
 
     if response.status_code == 200:
         path = f"./static/{filename}"
+        print("📦 Intentando guardar en:", os.path.abspath(path))
+
         try:
             with open(path, "wb") as f:
                 f.write(response.content)
-            print("✅ Audio guardado en:", os.path.abspath(path))
-            print("📂 Archivos en static/:", os.listdir("static"))
-            return f"{request.url_root}static/{filename}"
+            print("✅ Archivo guardado correctamente.")
+            print("📏 Tamaño del archivo:", os.path.getsize(path), "bytes")
+            print("📂 Archivos actuales en static/:", os.listdir("static"))
         except Exception as e:
             print("❌ Error al guardar archivo:", str(e))
             return None
-    else:
-        print("❌ Error al generar audio:", response.status_code)
-        print("📄 Detalle:", response.text)
-        return None
 
+        return f"{request.url_root}static/{filename}"
 
 # --- Generar respuesta con GPT ---
 def responder_con_gpt(texto_cliente):
@@ -143,6 +142,7 @@ def voice():
 
         if os.path.exists(path) and audio_url:
             print("✅ Saludo listo:", audio_url)
+            print("🎯 Reproduciendo audio desde:", audio_url) 
             response.play(audio_url)
         else:
             print("⚠️ No se pudo generar el audio, usando fallback.")
