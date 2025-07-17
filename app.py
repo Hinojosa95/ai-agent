@@ -29,6 +29,8 @@ openai.api_key = OPENAI_API_KEY
 
 # --- Generar audio ElevenLabs ---
 def generar_audio_elevenlabs(texto, filename="audio.mp3"):
+    os.makedirs("static", exist_ok=True)  # Asegura que exista antes de guardar
+
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
@@ -36,7 +38,7 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     }
     payload = {
         "text": texto,
-        "model_id": "eleven_monolingual_v1",  # Usa este si tu voz está en inglés
+        "model_id": "eleven_multilingual_v2",
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.85
@@ -46,28 +48,23 @@ def generar_audio_elevenlabs(texto, filename="audio.mp3"):
     print(f"🔁 Enviando solicitud a ElevenLabs con VOICE_ID: {VOICE_ID}")
     response = requests.post(url, json=payload, headers=headers)
 
-    if response.status_code != 200:
+    if response.status_code == 200:
+        path = f"./static/{filename}"
+
+        with open(path, "wb") as f:
+            f.write(response.content)
+
+        time.sleep(1)
+
+        print(f"✅ Audio guardado en: {os.path.abspath(path)}")
+        print(f"📂 Archivos actuales en static/: {os.listdir('./static')}")
+
+        return f"{request.url_root}static/{filename}"
+    else:
         print(f"❌ Error al generar audio: {response.status_code}")
         print(f"📄 Detalle del error: {response.text}")
         return None
 
-    os.makedirs("static", exist_ok=True)
-    path = os.path.join("static", filename)
-
-    try:
-        with open(path, "wb") as f:
-            f.write(response.content)
-        print("✅ Audio guardado en:", os.path.abspath(path))
-    except Exception as e:
-        print(f"❌ Error al guardar el audio: {e}")
-        return None
-
-    try:
-        base_url = request.url_root
-    except RuntimeError:
-        base_url = "http://localhost:5000/"
-
-    return f"{base_url}static/{filename}"
 
 # --- Generar respuesta con GPT ---
 def responder_con_gpt(texto_cliente):
@@ -132,8 +129,10 @@ def voice():
         path = f"./static/{filename}"
 
         # Eliminar si ya existía
-        if os.path.exists(path):
+        try:
             os.remove(path)
+        except FileNotFoundError:
+            pass
 
         print("⏳ Generando saludo con voz clonada...")
         audio_url = generar_audio_elevenlabs(saludo, filename)
