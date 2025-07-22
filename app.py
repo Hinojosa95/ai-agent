@@ -22,6 +22,7 @@ def voice():
 
     response = VoiceResponse()
     response.play(url=audio_url)
+    response.pause(length=5)
     return str(response)
 
 def generate_greeting(text="Hi, this is Bryan, and I help trucks pay as low as 800 dollars per month on truck insurance, and secure dispatching to help that will garantee you make 3 to 4 thousand a week. do you have 2 minutes for a quick quote?"):
