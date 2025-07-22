@@ -51,4 +51,5 @@ def generate_greeting(text="Hi, this is Bryan. How can I help you today?"):
 
 if __name__ == "__main__":
     # generate_greeting()  # ❌ coméntalo para evitar error 429
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
