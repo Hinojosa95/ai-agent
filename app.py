@@ -49,6 +49,10 @@ def generate_greeting(text="Hi, this is Bryan. How can I help you today?"):
     else:
         print(f"❌ Error generando greeting: {response.status_code} - {response.text}")
 
+@app.route("/static/greeting.mp3")
+def serve_greeting():
+    return send_from_directory("static", "greeting.mp3")
+
 if __name__ == "__main__":
     # generate_greeting()  # ❌ coméntalo para evitar error 429
     port = int(os.environ.get("PORT", 5000))
