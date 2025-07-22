@@ -1,6 +1,4 @@
 flask
-twilio
-openai
 python-dotenv
-langdetect
+twilio
 requests

@@ -1,62 +1,54 @@
 from flask import Flask, request, send_from_directory
 from twilio.twiml.voice_response import VoiceResponse
-import os
-import requests
 from dotenv import load_dotenv
+import requests, os
 
-# Cargar variables de entorno
 load_dotenv()
+
+app = Flask(__name__)
+
+# Cargar claves del entorno
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
-# Crear app Flask
-app = Flask(__name__, static_folder='static', static_url_path='/static')
+# ✅ Ruta explícita para servir greeting.mp3 sin error 403
+@app.route('/static/greeting.mp3')
+def serve_audio():
+    return send_from_directory('static', 'greeting.mp3')
 
-# Ruta de test de llamada
+# Ruta principal para responder la llamada
 @app.route("/voice", methods=["POST"])
 def voice():
-    saludo = "Hi Thomas, this is Bryan. I help trucks pay as low as $895 per month on truck insurance."
-    filename = "saludo.mp3"
-    path = os.path.join("static", filename)
+    audio_url = request.url_root + "static/greeting.mp3"
+    print("🟢 URL del audio para Twilio:", audio_url)
 
-    # Crear carpeta static si no existe
-    os.makedirs("static", exist_ok=True)
-
-    # Generar audio si no existe
-    if not os.path.exists(path):
-        print("🎤 Generando saludo con ElevenLabs...")
-        audio_url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
-        headers = {
-            "xi-api-key": ELEVENLABS_API_KEY,
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "text": saludo,
-            "model_id": "eleven_multilingual_v2",
-            "voice_settings": {"stability": 0.4, "similarity_boost": 0.85}
-        }
-
-        r = requests.post(audio_url, json=payload, headers=headers)
-        if r.status_code == 200:
-            with open(path, "wb") as f:
-                f.write(r.content)
-            print("✅ Audio guardado en static/saludo.mp3")
-        else:
-            print("❌ Error al generar audio:", r.status_code, r.text)
-
-    # Preparar respuesta TwiML
     response = VoiceResponse()
-    full_url = request.url_root.rstrip("/") + "/static/" + filename
-    print("📢 Reproduciendo:", full_url)
-    response.play(full_url)
-
+    response.play(url=audio_url)
     return str(response)
 
-# Servir archivos estáticos (mp3)
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    return send_from_directory('static', filename)
+# Ruta para generar el saludo con ElevenLabs
+def generate_greeting(text="Hi, this is Bryan. How can I help you today?"):
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
+    headers = {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json"
+    }
+    data = {
+        "text": text,
+        "model_id": "eleven_monolingual_v1",
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
+    }
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+        if not os.path.exists("static"):
+            os.makedirs("static")
+        with open("static/greeting.mp3", "wb") as f:
+            f.write(response.content)
+        print("✅ greeting.mp3 generado.")
+    else:
+        print(f"❌ Error generando greeting: {response.status_code} - {response.text}")
 
-# Ejecutar la app
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001)
+    # generate_greeting()  # ❌ coméntalo para evitar error 429
+    app.run(debug=True, port=5000)
