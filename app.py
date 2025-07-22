@@ -7,18 +7,15 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Cargar claves del entorno
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
-# ✅ Ruta explícita para servir greeting.mp3 sin error 403
 @app.route('/static/greeting.mp3')
 def serve_audio():
     return send_from_directory('static', 'greeting.mp3')
 
-# Ruta principal para responder la llamada
-@app.route("/voice", methods=["POST"])
+@app.route("/voice", methods=["GET", "POST"])
 def voice():
     audio_url = request.url_root + "static/greeting.mp3"
     print("🟢 URL del audio para Twilio:", audio_url)
@@ -27,8 +24,7 @@ def voice():
     response.play(url=audio_url)
     return str(response)
 
-# Ruta para generar el saludo con ElevenLabs
-def generate_greeting(text="Hi, this is Bryan. How can I help you today?"):
+def generate_greeting(text="Hi, this is Bryan, and I help trucks pay as low as 800 dollars per month on truck insurance, and secure dispatching to help that will garantee you make 3 to 4 thousand a week. do you have 2 minutes for a quick quote?"):
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
@@ -49,11 +45,7 @@ def generate_greeting(text="Hi, this is Bryan. How can I help you today?"):
     else:
         print(f"❌ Error generando greeting: {response.status_code} - {response.text}")
 
-@app.route("/static/greeting.mp3")
-def serve_greeting():
-    return send_from_directory("static", "greeting.mp3")
-
 if __name__ == "__main__":
-    # generate_greeting()  # ❌ coméntalo para evitar error 429
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    generate_greeting()  # ⚠️ Solo ejecútalo manualmente si necesitas regenerar el audio
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host="0.0.0.0", port=5001)

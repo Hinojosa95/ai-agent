@@ -2,20 +2,18 @@ from twilio.rest import Client
 import os
 from dotenv import load_dotenv
 
-# Cargar variables del .env
 load_dotenv()
 
-# Inicializar cliente Twilio
-client = Client(
-    os.getenv("TWILIO_ACCOUNT_SID"),
-    os.getenv("TWILIO_AUTH_TOKEN")
-)
+account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+twilio_number = os.getenv("TWILIO_PHONE_NUMBER")
 
-# Crear llamada
+client = Client(account_sid, auth_token)
+
 call = client.calls.create(
-    to="+12816195256",  # Reemplaza esto con tu número real para pruebas
-    from_=os.getenv("TWILIO_PHONE_NUMBER"),
-    url="https://cad8f5b26d11.ngrok-free.app"  # Si usas ngrok, reemplaza con el dominio público
+    to="+12816195256",  # reemplaza con tu número de prueba
+    from_=twilio_number,
+    url="https://ai-agent-01hn.onrender.com/voice"  # <--- correcto
 )
 
-print(f"Llamada iniciada. SID: {call.sid}")
+print("✅ Llamada realizada:", call.sid)
