@@ -12,14 +12,15 @@ VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 BASE_URL = "https://ai-agent-01hn.onrender.com"
+GREETING_FILENAME = f"greeting_{uuid.uuid4()}.mp3"
+GREETING_URL = f"{BASE_URL}/static/{GREETING_FILENAME}" 
 
 @app.route("/voice", methods=["GET", "POST"])
 def voice():
-    audio_url = f"{BASE_URL}/static/greeting.mp3"
-    print("🟢 Reproduciendo saludo inicial:", audio_url)
+    print("🟢 Reproduciendo saludo inicial:", GREETING_URL)
 
     response = VoiceResponse()
-    response.play(audio_url)
+    response.play(GREETING_URL)
     response.pause(length=1)
 
     gather = response.gather(
@@ -30,7 +31,6 @@ def voice():
         speech_timeout="auto",
         actionOnEmptyResult=True
     )
-    gather.say("How can I help you today?", voice="Polly.Matthew", language="en-US")
 
     return str(response), 200, {"Content-Type": "text/xml"}
 
@@ -40,8 +40,9 @@ def process_speech():
     for key in request.values:
         print(f"{key} = {request.values.get(key)}")
 
-    if "SpeechResult" not in request.values:
-        print("❗ SpeechResult no presente en el request.")
+    #if "SpeechResult" not in request.values:
+        #print("❗ SpeechResult no presente en el request.")
+        
     speech = request.values.get("SpeechResult", "").strip()
     print("🗣️ Cliente dijo:", speech)
 
@@ -85,13 +86,15 @@ def process_speech():
         speech_timeout="auto",
         actionOnEmptyResult=True
     )
-    gather.say("How else can I assist you?", voice="Polly.Matthew", language="en-US")
+
 
     return str(response), 200, {"Content-Type": "text/xml"}
 
-def generate_audio(text):
-    filename = f"response_{uuid.uuid4()}.mp3"
+def generate_audio(text, filename=None):
+    if not filename:
+        filename = f"response_{uuid.uuid4()}.mp3"
     filepath = os.path.join("static", filename)
+
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
@@ -118,7 +121,12 @@ def serve_audio(filename):
     return app.send_static_file(filename)
 
 if __name__ == "__main__":
+    # Crear carpeta static si no existe
     if not os.path.exists("static"):
         os.makedirs("static")
-    generate_audio("Hi, this is Bryan. Do you have 2 minutes for a quick quote?")
+    
+    # Generar saludo inicial y guardar URL global
+    GREETING_FILENAME = f"greeting_{uuid.uuid4()}.mp3"
+    GREETING_URL = generate_audio("Hi, this is Bryan. Do you have 2 minutes for a quick quote?", GREETING_FILENAME)
+
     app.run(debug=False, host="0.0.0.0", port=5001)
