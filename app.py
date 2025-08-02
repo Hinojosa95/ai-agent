@@ -1,31 +1,97 @@
-from flask import Flask, request, send_from_directory
+from flask import Flask, request
 from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
-import requests, os
+import openai, requests, os, uuid
 
 load_dotenv()
-
 app = Flask(__name__)
 
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-@app.route('/static/greeting.mp3')
-def serve_audio():
-    return send_from_directory('static', 'greeting.mp3')
+BASE_URL = "https://ai-agent-01hn.onrender.com"
 
 @app.route("/voice", methods=["GET", "POST"])
 def voice():
-    audio_url = request.url_root + "static/greeting.mp3"
-    print("🟢 URL del audio para Twilio:", audio_url)
+    audio_url = f"{BASE_URL}/static/greeting.mp3"
+    print("🟢 Reproduciendo saludo inicial:", audio_url)
 
     response = VoiceResponse()
-    response.play(url=audio_url)
-    response.pause(length=5)
-    return str(response)
+    response.play(audio_url)
+    response.pause(length=1)
 
-def generate_greeting(text="Hi, this is Bryan, and I help trucks pay as low as 800 dollars per month on truck insurance, and secure dispatching to help that will garantee you make 3 to 4 thousand a week. do you have 2 minutes for a quick quote?"):
+    gather = response.gather(
+        input="speech",
+        action=f"{BASE_URL}/process_speech",
+        method="POST",
+        timeout=15,
+        speech_timeout="auto",
+        actionOnEmptyResult=True
+    )
+    gather.say("How can I help you today?", voice="Polly.Matthew", language="en-US")
+
+    return str(response), 200, {"Content-Type": "text/xml"}
+
+@app.route("/process_speech", methods=["POST"])
+def process_speech():
+    print("🔍 Datos recibidos en /process_speech:")
+    for key in request.values:
+        print(f"{key} = {request.values.get(key)}")
+
+    if "SpeechResult" not in request.values:
+        print("❗ SpeechResult no presente en el request.")
+    speech = request.values.get("SpeechResult", "").strip()
+    print("🗣️ Cliente dijo:", speech)
+
+    response = VoiceResponse()
+
+    if not speech:
+        print("⚠️ No se recibió entrada de voz.")
+        response.say("Sorry, I didn't hear anything. Let's try again.", voice="Polly.Matthew")
+        response.redirect(f"{BASE_URL}/voice")
+        return str(response), 200, {"Content-Type": "text/xml"}
+
+    try:
+        prompt = f"Client: {speech}\nAgent:"
+        gpt_response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful insurance agent for truckers."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        reply = gpt_response.choices[0].message.content.strip()
+        print("🤖 GPT responde:", reply)
+    except Exception as e:
+        print(f"❌ Error GPT: {e}")
+        response.say("Sorry, there was a problem generating the response.")
+        return str(response), 200, {"Content-Type": "text/xml"}
+
+    audio_url = generate_audio(reply)
+    if not audio_url:
+        response.say("Sorry, I couldn't generate the audio response.")
+        return str(response), 200, {"Content-Type": "text/xml"}
+
+    response.play(audio_url)
+    response.pause(length=1)
+
+    gather = response.gather(
+        input="speech",
+        action=f"{BASE_URL}/process_speech",
+        method="POST",
+        timeout=15,
+        speech_timeout="auto",
+        actionOnEmptyResult=True
+    )
+    gather.say("How else can I assist you?", voice="Polly.Matthew", language="en-US")
+
+    return str(response), 200, {"Content-Type": "text/xml"}
+
+def generate_audio(text):
+    filename = f"response_{uuid.uuid4()}.mp3"
+    filepath = os.path.join("static", filename)
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
@@ -36,17 +102,23 @@ def generate_greeting(text="Hi, this is Bryan, and I help trucks pay as low as 8
         "model_id": "eleven_monolingual_v1",
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
     }
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 200:
-        if not os.path.exists("static"):
-            os.makedirs("static")
-        with open("static/greeting.mp3", "wb") as f:
-            f.write(response.content)
-        print("✅ greeting.mp3 generado.")
+
+    res = requests.post(url, headers=headers, json=data)
+    if res.status_code == 200:
+        with open(filepath, "wb") as f:
+            f.write(res.content)
+        print("✅ Audio generado:", filename)
+        return f"{BASE_URL}/static/{filename}"
     else:
-        print(f"❌ Error generando greeting: {response.status_code} - {response.text}")
+        print("❌ Error generando audio:", res.status_code, res.text)
+        return None
+
+@app.route('/static/<path:filename>')
+def serve_audio(filename):
+    return app.send_static_file(filename)
 
 if __name__ == "__main__":
-    generate_greeting()  # ⚠️ Solo ejecútalo manualmente si necesitas regenerar el audio
-    port = int(os.environ.get("PORT", 5001))
-    app.run(host="0.0.0.0", port=5001)
+    if not os.path.exists("static"):
+        os.makedirs("static")
+    generate_audio("Hi, this is Bryan. Do you have 2 minutes for a quick quote?")
+    app.run(debug=False, host="0.0.0.0", port=5001)

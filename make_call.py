@@ -1,6 +1,6 @@
 from twilio.rest import Client
-import os
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
@@ -10,10 +10,15 @@ twilio_number = os.getenv("TWILIO_PHONE_NUMBER")
 
 client = Client(account_sid, auth_token)
 
-call = client.calls.create(
-    to="+12816195256",  # reemplaza con tu número de prueba
-    from_=twilio_number,
-    url="https://ai-agent-01hn.onrender.com/voice"  # <--- correcto
-)
+# ✅ Dirección pública en Render (ajústala si usas otra)
+url = "https://ai-agent-01hn.onrender.com/voice"
 
-print("✅ Llamada realizada:", call.sid)
+try:
+    call = client.calls.create(
+        to="+12816195256",  # 🔁 ← Reemplaza con tu número de prueba
+        from_=twilio_number,
+        url=url
+    )
+    print("📞 Llamada realizada con SID:", call.sid)
+except Exception as e:
+    print("❌ Error al realizar la llamada:", e)
