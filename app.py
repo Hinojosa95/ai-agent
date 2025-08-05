@@ -12,8 +12,9 @@ VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 BASE_URL = "https://ai-agent-01hn.onrender.com"
-GREETING_FILENAME = f"greeting_{uuid.uuid4()}.mp3"
-GREETING_URL = f"{BASE_URL}/static/{GREETING_FILENAME}" 
+
+# Inicializar variable global (vacía por ahora)
+GREETING_URL = ""
 
 @app.route("/voice", methods=["GET", "POST"])
 def voice():
@@ -40,9 +41,6 @@ def process_speech():
     for key in request.values:
         print(f"{key} = {request.values.get(key)}")
 
-    #if "SpeechResult" not in request.values:
-        #print("❗ SpeechResult no presente en el request.")
-        
     speech = request.values.get("SpeechResult", "").strip()
     print("🗣️ Cliente dijo:", speech)
 
@@ -50,7 +48,7 @@ def process_speech():
 
     if not speech:
         print("⚠️ No se recibió entrada de voz.")
-        response.say("Sorry, I didn't hear anything. Let's try again.", voice="Polly.Matthew")
+        response.say("Sorry, I didn't hear anything. Let's try again.")
         response.redirect(f"{BASE_URL}/voice")
         return str(response), 200, {"Content-Type": "text/xml"}
 
@@ -86,7 +84,6 @@ def process_speech():
         speech_timeout="auto",
         actionOnEmptyResult=True
     )
-
 
     return str(response), 200, {"Content-Type": "text/xml"}
 
@@ -125,8 +122,8 @@ if __name__ == "__main__":
     if not os.path.exists("static"):
         os.makedirs("static")
     
-    # Generar saludo inicial y guardar URL global
-    GREETING_FILENAME = f"greeting_{uuid.uuid4()}.mp3"
-    GREETING_URL = generate_audio("Hi, this is Bryan. Do you have 2 minutes for a quick quote?", GREETING_FILENAME)
+    # Crear saludo y guardar global
+    greeting_filename = f"greeting_{uuid.uuid4()}.mp3"
+    GREETING_URL = generate_audio("Hi, this is Bryan. Do you have 2 minutes for a quick quote?", greeting_filename)
 
     app.run(debug=False, host="0.0.0.0", port=5001)
